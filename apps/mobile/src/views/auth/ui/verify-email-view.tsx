@@ -1,5 +1,6 @@
 import { useLocalSearchParams, useRouter } from "expo-router";
 import { ScrollView, StyleSheet } from "react-native";
+import { EmailAuthGate } from "@/entities/launch";
 import { VerifyEmailForm } from "@/features/verify-email";
 import { space } from "@/shared/theme";
 import { EmptyState, Screen, Text } from "@/shared/ui";
@@ -27,7 +28,12 @@ export function VerifyEmailView() {
         keyboardDismissMode="on-drag"
       >
         <Text variant="title">이메일 인증</Text>
-        <VerifyEmailForm email={email} onVerified={() => router.replace("/sign-in")} />
+        <EmailAuthGate
+          onSignIn={() => router.replace("/sign-in")}
+          onBrowse={() => router.replace("/")}
+        >
+          <VerifyEmailForm email={email} onVerified={() => router.replace("/sign-in")} />
+        </EmailAuthGate>
       </ScrollView>
     </Screen>
   );
