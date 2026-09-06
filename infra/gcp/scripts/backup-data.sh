@@ -37,10 +37,13 @@ exec 9>"$LOCK_FILE"
 flock -n 9 || die "another logical backup is active"
 
 run_minio_freeze() {
+  # The adopted legacy release uses gole_default, while the new release uses
+  # gole_data. Reach only the fixed MinIO container's loopback in either case.
+  # mc is the image entrypoint: explicitly select sh for the command sequence.
   timeout --foreground --kill-after="$MINIO_ADMIN_KILL_AFTER" "$MINIO_ADMIN_TIMEOUT" \
-    docker run --rm --network gole_data --env-file /etc/gole/infra.env \
-    "$MC_IMAGE" sh -eu -c \
-    'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc admin service freeze local >/dev/null' \
+    docker run --rm --network "container:$MINIO_CONTAINER" --env-file /etc/gole/infra.env \
+    --entrypoint /bin/sh "$MC_IMAGE" -eu -c \
+    'mc alias set --api S3v4 local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc admin service freeze local >/dev/null' \
     >/dev/null
 }
 
@@ -48,10 +51,12 @@ run_minio_unfreeze_and_prove() {
   # A successful administrative response alone is insufficient after a timed
   # out freeze request: prove the S3 API is serving again before writes can be
   # admitted. `mc ls` is read-only and blocks while the service is frozen.
+  # Pin S3v4: alias auto-detection probes S3 and hangs on a frozen service,
+  # preventing the administrative unfreeze request from ever being sent.
   timeout --foreground --kill-after="$MINIO_ADMIN_KILL_AFTER" "$MINIO_ADMIN_TIMEOUT" \
-    docker run --rm --network gole_data --env-file /etc/gole/infra.env \
-    "$MC_IMAGE" sh -eu -c \
-    'mc alias set local http://minio:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc admin service unfreeze local >/dev/null && mc ls local >/dev/null' \
+    docker run --rm --network "container:$MINIO_CONTAINER" --env-file /etc/gole/infra.env \
+    --entrypoint /bin/sh "$MC_IMAGE" -eu -c \
+    'mc alias set --api S3v4 local http://127.0.0.1:9000 "$MINIO_ROOT_USER" "$MINIO_ROOT_PASSWORD" >/dev/null && mc admin service unfreeze local >/dev/null && mc ls local >/dev/null' \
     >/dev/null
 }
 
