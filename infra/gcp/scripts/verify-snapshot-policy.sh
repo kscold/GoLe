@@ -65,7 +65,8 @@ jq -e \
     .snapshotSchedulePolicy.schedule.dailySchedule.startTime == "20:00" and
     .snapshotSchedulePolicy.retentionPolicy.maxRetentionDays == 3 and
     .snapshotSchedulePolicy.retentionPolicy.onSourceDiskDelete == "APPLY_RETENTION_POLICY" and
-    .snapshotSchedulePolicy.snapshotProperties.guestFlush == false and
+    (.snapshotSchedulePolicy.snapshotProperties |
+      (has("guestFlush") | not) or .guestFlush == false) and
     .snapshotSchedulePolicy.snapshotProperties.storageLocations == [$region] and
     .snapshotSchedulePolicy.snapshotProperties.labels.app == "gole" and
     .snapshotSchedulePolicy.snapshotProperties.labels.environment == "production" and

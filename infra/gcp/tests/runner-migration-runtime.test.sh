@@ -148,15 +148,25 @@ grep -q 'unsealed legacy runner root has no reviewed retired unit' \
   /tmp/missing-evidence.out
 mv /tmp/legacy-runner.service.missing "/etc/systemd/system/$legacy_service"
 
+ln -s runsvc.sh /opt/actions-runner/npm
 bash /source/infra/gcp/scripts/register-github-runner.sh --token-stdin </dev/null
+chown -h kscold:kscold /opt/actions-runner/npm
+if bash /source/infra/gcp/scripts/register-github-runner.sh --token-stdin </dev/null >/dev/null 2>&1; then
+  echo 'sealed runner accepted a non-root-owned symlink' >&2
+  exit 1
+fi
+chown -h root:root /opt/actions-runner/npm
 
 [ ! -e "/etc/systemd/system/$legacy_service" ]
 [ -d /opt/actions-runner ]
 [ -f /opt/actions-runner/.runner ]
 [ -f /opt/actions-runner/.service ]
 [ "$(stat -c '%U:%G:%a' /opt/actions-runner)" = root:root:700 ]
-! find /opt/actions-runner -xdev \
-  \( ! -user root -o ! -group root -o -perm /0077 \) -print -quit | grep -q .
+if find /opt/actions-runner -xdev \
+  \( ! -user root -o ! -group root -o \( ! -type l -a -perm /0077 \) \) -print -quit | grep -q .; then
+  echo 'legacy runner still has accessible files or untrusted ownership' >&2
+  exit 1
+fi
 [ "$(stat -c '%U:%G:%a:%h' /etc/gole/legacy-runner.service.retired)" = \
   root:root:600:1 ]
 [ "$(sha256sum /etc/gole/legacy-runner.service.retired | cut -d' ' -f1)" = \

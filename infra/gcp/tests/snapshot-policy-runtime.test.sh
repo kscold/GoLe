@@ -15,7 +15,7 @@ case "$1 $2 $3" in
   "compute resource-policies describe")
     retention=3
     if [ "${FAKE_BAD_POLICY:-0}" = 1 ]; then retention=30; fi
-    cat <<JSON
+    cat <<JSON | jq --arg mode "${FAKE_GUEST_FLUSH:-false}" 'if $mode == "missing" then del(.snapshotSchedulePolicy.snapshotProperties.guestFlush) else .snapshotSchedulePolicy.snapshotProperties.guestFlush = ($mode | fromjson) end'
 {"status":"READY","selfLink":"https://www.googleapis.com/compute/v1/projects/test-project/regions/asia-northeast3/resourcePolicies/gole-production-daily-snapshots","snapshotSchedulePolicy":{"schedule":{"dailySchedule":{"daysInCycle":1,"startTime":"20:00"}},"retentionPolicy":{"maxRetentionDays":${retention},"onSourceDiskDelete":"APPLY_RETENTION_POLICY"},"snapshotProperties":{"guestFlush":false,"storageLocations":["asia-northeast3"],"labels":{"app":"gole","environment":"production","backup":"daily","managed-by":"terraform"}}}}
 JSON
     ;;
@@ -70,6 +70,13 @@ chmod 0755 "$snapshot_verifier"
 
 bash "$snapshot_verifier"
 bash "$snapshot_verifier" --require-ready-snapshot
+FAKE_GUEST_FLUSH=missing bash "$snapshot_verifier"
+for invalid_flush in true null '"false"' 0; do
+  if FAKE_GUEST_FLUSH="$invalid_flush" bash "$snapshot_verifier" >/dev/null 2>&1; then
+    echo 'unexpected guest flush value was accepted' >&2
+    exit 1
+  fi
+done
 
 if FAKE_BAD_POLICY=1 bash "$snapshot_verifier" >/dev/null 2>&1; then
   echo "invalid retention policy was accepted" >&2

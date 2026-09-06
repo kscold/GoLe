@@ -141,8 +141,11 @@ legacy_runner_root_state() {
     root:root:700)
       [ -f "$LEGACY_RUNNER_ROOT/.runner" ] && [ ! -L "$LEGACY_RUNNER_ROOT/.runner" ] ||
         die "sealed legacy runner registration is invalid"
+      # Linux symlink mode is always 0777; the sealed root directory controls
+      # traversal. Still require root ownership of links and do not follow them.
       if find "$LEGACY_RUNNER_ROOT" -xdev \
-        \( ! -user root -o ! -group root -o -perm /0077 \) -print -quit | grep -q .; then
+        \( ! -user root -o ! -group root -o \( ! -type l -a -perm /0077 \) \) \
+        -print -quit | grep -q .; then
         die "sealed legacy runner root is readable or not root-owned"
       fi
       printf 'sealed\n'
