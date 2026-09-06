@@ -18,6 +18,7 @@ export function VerifyEmailForm({ email, onVerified }: VerifyEmailFormProps) {
   const [resending, setResending] = useState(false);
 
   async function handleVerify(): Promise<void> {
+    if (code.trim().length === 0 || submitting || resending) return;
     setError(null);
     setNotice(null);
     setSubmitting(true);
@@ -32,12 +33,14 @@ export function VerifyEmailForm({ email, onVerified }: VerifyEmailFormProps) {
   }
 
   async function handleResend(): Promise<void> {
+    if (submitting || resending) return;
     setError(null);
+    setNotice(null);
     setResending(true);
     try {
       await resendVerificationEmail(email);
       // 서버는 계정 존재 여부를 노출하지 않으려고 항상 204를 준다. 문구도 그 계약에 맞춘다.
-      setNotice("인증 코드를 다시 보냈습니다. 메일함을 확인해 주세요.");
+      setNotice("인증이 필요한 계정이면 코드를 보내드립니다. 메일함을 확인해 주세요.");
     } catch {
       setError("인증 코드를 다시 보내지 못했습니다.");
     } finally {
@@ -71,13 +74,14 @@ export function VerifyEmailForm({ email, onVerified }: VerifyEmailFormProps) {
         label="인증하기"
         onPress={() => void handleVerify()}
         loading={submitting}
-        disabled={code.trim().length === 0}
+        disabled={code.trim().length === 0 || resending}
       />
       <Button
         label="코드 다시 받기"
         variant="secondary"
         onPress={() => void handleResend()}
         loading={resending}
+        disabled={submitting}
       />
     </View>
   );
