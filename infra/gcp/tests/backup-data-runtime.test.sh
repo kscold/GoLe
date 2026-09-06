@@ -37,6 +37,10 @@ case "$1" in
     ;;
   run)
     case "$*" in
+      *'--network container:gole-minio --env-file /etc/gole/infra.env --entrypoint /bin/sh '*'http://127.0.0.1:9000'*) ;;
+      *) echo 'MinIO helper must use the target network namespace and shell entrypoint' >&2; exit 79 ;;
+    esac
+    case "$*" in
       *'service freeze'*)
         printf 'freeze\n' >> /tmp/backup-events
         [ ! -e /tmp/fail-freeze-response ] || exit 74
