@@ -82,9 +82,10 @@ cat > /test-bin/uname <<'EOF'
 exec /usr/bin/uname "$@"
 EOF
 
-touch /opt/gole-actions-runner/runsvc.sh /opt/actions-runner/runsvc.sh \
+install -d -m 0750 -o goledeploy -g goledeploy /opt/gole-actions-runner/bin
+touch /opt/gole-actions-runner/bin/runsvc.sh /opt/gole-actions-runner/.credentials /opt/actions-runner/runsvc.sh \
   /opt/actions-runner/.runner
-chmod 0755 /opt/gole-actions-runner/runsvc.sh /opt/actions-runner/runsvc.sh \
+chmod 0755 /opt/gole-actions-runner/bin/runsvc.sh /opt/actions-runner/runsvc.sh \
   /test-bin/systemctl
 chmod 0755 /test-bin/uname
 chown -R kscold:kscold /opt/actions-runner
@@ -158,6 +159,8 @@ fi
 chown -h root:root /opt/actions-runner/npm
 
 [ ! -e "/etc/systemd/system/$legacy_service" ]
+[ -x /opt/gole-actions-runner/runsvc.sh ]
+[ "$(stat -c '%U:%G:%a' /opt/gole-actions-runner/.credentials)" = goledeploy:goledeploy:600 ]
 [ -d /opt/actions-runner ]
 [ -f /opt/actions-runner/.runner ]
 [ -f /opt/actions-runner/.service ]
