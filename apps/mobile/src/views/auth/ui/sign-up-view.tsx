@@ -1,5 +1,6 @@
 import { useRouter } from "expo-router";
 import { ScrollView, StyleSheet } from "react-native";
+import { EmailAuthGate } from "@/entities/launch";
 import { SignUpForm } from "@/features/sign-up";
 import { space } from "@/shared/theme";
 import { Screen, Text } from "@/shared/ui";
@@ -16,9 +17,16 @@ export function SignUpView() {
         keyboardDismissMode="on-drag"
       >
         <Text variant="title">가입하기</Text>
-        <SignUpForm
-          onRegistered={(email) => router.replace({ pathname: "/verify-email", params: { email } })}
-        />
+        <EmailAuthGate
+          onSignIn={() => router.replace("/sign-in")}
+          onBrowse={() => router.replace("/")}
+        >
+          <SignUpForm
+            onRegistered={(email) =>
+              router.replace({ pathname: "/verify-email", params: { email } })
+            }
+          />
+        </EmailAuthGate>
       </ScrollView>
     </Screen>
   );
