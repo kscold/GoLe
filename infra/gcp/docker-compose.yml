@@ -158,6 +158,9 @@ services:
       GOLE_ONBOARDING_LOG_VERIFICATION_CODES: "false"
       # Stage 0는 SMTP를 보류한다. 인증코드가 필요한 기능은 API에서 503으로 닫고,
       # 기존 검증 계정 로그인과 별도 readiness를 통과한 OAuth만 유지한다.
+      # validate-production-env.py/validate-production-compose.py는 이 래치를
+      # 조건부로 검증한다(false면 아래 셋이 비어 있어야 하고, true면 셋 다 채워져
+      # 있어야 한다). 이 Compose의 런타임 기본값은 여전히 false로 고정한다.
       GOLE_VERIFICATION_EMAIL_ENABLED: "false"
       GOLE_MAIL_HEALTH_ENABLED: "false"
       SMTP_USERNAME: ""
