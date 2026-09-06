@@ -608,9 +608,8 @@ class ProductionComposePolicyTest(unittest.TestCase):
                 with self.assertRaises(self.validator.ComposePolicyError):
                     self.validator.validate(model)
 
-    def test_rejects_enabled_or_credentialed_stage_zero_mail(self) -> None:
+    def test_rejects_credentialed_stage_zero_mail_while_latch_stays_off(self) -> None:
         for key, value in (
-            ("GOLE_VERIFICATION_EMAIL_ENABLED", "true"),
             ("GOLE_MAIL_HEALTH_ENABLED", "true"),
             ("SMTP_USERNAME", "private-mailbox@example.test"),
             ("SMTP_PASSWORD", "do-not-print-this-app-password"),
@@ -621,6 +620,43 @@ class ProductionComposePolicyTest(unittest.TestCase):
                 model["services"]["backend"]["environment"][key] = value
                 with self.assertRaisesRegex(self.validator.ComposePolicyError, key):
                     self.validator.validate(model)
+
+    def test_rejects_email_latch_with_invalid_or_partial_identity(self) -> None:
+        # Neither "true" nor "false" is rejected outright.
+        model = copy.deepcopy(self.model)
+        model["services"]["backend"]["environment"]["GOLE_VERIFICATION_EMAIL_ENABLED"] = "TRUE"
+        with self.assertRaisesRegex(
+            self.validator.ComposePolicyError, "GOLE_VERIFICATION_EMAIL_ENABLED"
+        ):
+            self.validator.validate(model)
+
+        # Enabling without a full identity fails closed.
+        for missing_key in ("SMTP_USERNAME", "SMTP_PASSWORD", "GOLE_VERIFICATION_EMAIL_FROM"):
+            with self.subTest(missing=missing_key):
+                model = copy.deepcopy(self.model)
+                model["services"]["backend"]["environment"].update(
+                    {
+                        "GOLE_VERIFICATION_EMAIL_ENABLED": "true",
+                        "SMTP_USERNAME": "verified-mailbox@example.test",
+                        "SMTP_PASSWORD": "verified-app-password",
+                        "GOLE_VERIFICATION_EMAIL_FROM": "verified-sender@example.test",
+                    }
+                )
+                model["services"]["backend"]["environment"][missing_key] = ""
+                with self.assertRaisesRegex(self.validator.ComposePolicyError, missing_key):
+                    self.validator.validate(model)
+
+    def test_accepts_email_latch_enabled_with_a_full_identity(self) -> None:
+        model = copy.deepcopy(self.model)
+        model["services"]["backend"]["environment"].update(
+            {
+                "GOLE_VERIFICATION_EMAIL_ENABLED": "true",
+                "SMTP_USERNAME": "verified-mailbox@example.test",
+                "SMTP_PASSWORD": "verified-app-password",
+                "GOLE_VERIFICATION_EMAIL_FROM": "verified-sender@example.test",
+            }
+        )
+        self.validator.validate(model)
 
     def test_rejects_missing_or_unbounded_log_rotation(self) -> None:
         for service in self.model["services"]:
