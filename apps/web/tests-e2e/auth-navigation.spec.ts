@@ -232,6 +232,90 @@ test.describe("Auth navigation", () => {
     await expect(page.getByRole("checkbox", { name: /이용약관/ })).toBeVisible();
   });
 
+  test("메일 발송이 준비 전이면 미인증 로그인 복구 링크도 노출하지 않는다", async ({ page }) => {
+    await page.route("**/api/v1/config/launch", (route) =>
+      route.fulfill({
+        json: {
+          stage: 0,
+          tradeMode: "DIRECT_CHAT",
+          features: { payments: false, reviews: false, partnerPayout: false },
+          sellerIdentityVerificationReady: false,
+          emailAuthenticationAvailable: false,
+          updatedAt: null,
+        },
+      }),
+    );
+    await page.route("**/api/v1/accounts/sessions", async (route) => {
+      await route.fulfill({
+        status: 403,
+        contentType: "application/json",
+        body: JSON.stringify({
+          code: "ACCOUNT_NOT_VERIFIED",
+          message: "이메일 인증을 완료해 주세요",
+        }),
+      });
+    });
+    await page.goto("/login");
+    await page.getByLabel("이메일").fill("pending@gole.com");
+    await page.getByLabel("비밀번호").fill("password1");
+    await page.getByRole("button", { name: "로그인" }).click();
+
+    await expect(
+      page.getByRole("alert").filter({ hasText: "이메일 인증을 완료해 주세요" }),
+    ).toBeVisible();
+    await expect(page.getByRole("link", { name: "이메일 인증하러 가기" })).toHaveCount(0);
+  });
+
+  test("메일 발송이 준비 전이면 인증 코드 화면에 직접 들어가도 닫혀 있다", async ({ page }) => {
+    await page.route("**/api/v1/config/launch", (route) =>
+      route.fulfill({
+        json: {
+          stage: 0,
+          tradeMode: "DIRECT_CHAT",
+          features: { payments: false, reviews: false, partnerPayout: false },
+          sellerIdentityVerificationReady: false,
+          emailAuthenticationAvailable: false,
+          updatedAt: null,
+        },
+      }),
+    );
+
+    await page.goto("/verify");
+
+    await expect(page.getByText("이메일 인증 코드 발송을 준비하고 있어요.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "인증하기" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "로그인으로 돌아가기" })).toHaveAttribute(
+      "href",
+      "/login",
+    );
+  });
+
+  test("메일 발송이 준비 전이면 비밀번호 재설정 화면에 직접 들어가도 닫혀 있다", async ({
+    page,
+  }) => {
+    await page.route("**/api/v1/config/launch", (route) =>
+      route.fulfill({
+        json: {
+          stage: 0,
+          tradeMode: "DIRECT_CHAT",
+          features: { payments: false, reviews: false, partnerPayout: false },
+          sellerIdentityVerificationReady: false,
+          emailAuthenticationAvailable: false,
+          updatedAt: null,
+        },
+      }),
+    );
+
+    await page.goto("/forgot-password?returnTo=%2Fcollection");
+
+    await expect(page.getByText("이메일 재설정 코드 발송을 준비하고 있어요.")).toBeVisible();
+    await expect(page.getByRole("button", { name: "재설정 코드 받기" })).toHaveCount(0);
+    await expect(page.getByRole("link", { name: "로그인으로 돌아가기" })).toHaveAttribute(
+      "href",
+      "/login?returnTo=%2Fcollection",
+    );
+  });
+
   test("잘못된 로그인 자격증명은 이미 저장된 세션 메타데이터를 지우지 않는다", async ({ page }) => {
     await page.route("**/api/v1/accounts/sessions", async (route) => {
       await route.fulfill({
