@@ -23,7 +23,7 @@ export function SignUpView() {
         >
           <SignUpForm
             onRegistered={(email) =>
-              router.replace({ pathname: "/verify-email", params: { email } })
+              router.replace({ pathname: "/verify-email", params: { email, origin: "sign-up" } })
             }
           />
         </EmailAuthGate>

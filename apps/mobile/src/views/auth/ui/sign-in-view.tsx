@@ -19,7 +19,7 @@ export function SignInView() {
         <SignInForm
           onSignedIn={() => router.replace("/")}
           onNeedsVerification={(email) =>
-            router.replace({ pathname: "/verify-email", params: { email } })
+            router.replace({ pathname: "/verify-email", params: { email, origin: "sign-in" } })
           }
         />
         <Button
