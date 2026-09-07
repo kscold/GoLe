@@ -19,6 +19,7 @@ export function OAuthCallbackPage({ provider }: OAuthCallbackPageProps) {
   const router = useRouter();
   const params = useSearchParams();
   const [error, setError] = useState<string | undefined>(undefined);
+  const [errorCode, setErrorCode] = useState<string | undefined>(undefined);
   const ranRef = useRef(false);
 
   useEffect(() => {
@@ -69,6 +70,16 @@ export function OAuthCallbackPage({ provider }: OAuthCallbackPageProps) {
         }
         router.replace(target);
       } catch (cause) {
+        // 미가입 Google 계정은 여기서 처음 걸러진다 — signup 동의가 state에 없었기 때문에
+        // 서버가 회원가입 자체를 거부한 것이지, 로그인 정보가 틀린 게 아니다. 같은 /login으로
+        // 돌려보내면 사용자가 이 화면을 영원히 반복하게 되므로 /signup으로 갈라야 한다.
+        if (cause instanceof ApiError && cause.code === "POLICY_ACCEPTANCE_REQUIRED") {
+          setErrorCode(cause.code);
+          setError(
+            "이 Google 계정은 아직 가입되어 있지 않아요. 가입하려면 이용약관 확인, 개인정보처리방침 확인, 만 14세 이상 확인에 먼저 동의해야 해요.",
+          );
+          return;
+        }
         setError(
           cause instanceof ApiError ? cause.message : "소셜 로그인 처리 중 오류가 발생했습니다.",
         );
@@ -85,6 +96,15 @@ export function OAuthCallbackPage({ provider }: OAuthCallbackPageProps) {
           <>
             <Heading level={1}>로그인 처리 중...</Heading>
             <Text tone="secondary">잠시만 기다려 주세요.</Text>
+          </>
+        ) : errorCode === "POLICY_ACCEPTANCE_REQUIRED" ? (
+          <>
+            {/* 인증은 성공했고 가입만 안 된 상태다. "실패"라고 하면 원인을 잘못 짚게 한다. */}
+            <Heading level={1}>가입이 필요해요</Heading>
+            <Text tone="secondary">{error}</Text>
+            {/* 복귀 경로는 성공 응답에만 실려 오므로 이 분기에서는 알 수 없다. 가입을 마치면
+                가입 화면이 자체 흐름대로 보내 준다. */}
+            <LinkButton href="/signup">회원가입 화면으로</LinkButton>
           </>
         ) : (
           <>
