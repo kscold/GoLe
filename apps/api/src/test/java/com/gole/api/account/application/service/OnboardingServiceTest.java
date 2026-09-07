@@ -9,6 +9,7 @@ import com.gole.api.account.application.port.in.SelectInterestTagsUseCase.Select
 import com.gole.api.account.application.port.in.SetNicknameUseCase.SetNicknameCommand;
 import com.gole.api.account.application.port.in.SubmitOnboardingConsentUseCase.SubmitConsentCommand;
 import com.gole.api.account.application.port.out.AccountRepositoryPort;
+import com.gole.api.account.application.port.out.PasswordHasherPort;
 import com.gole.api.account.application.port.out.PhoneVerificationStorePort;
 import com.gole.api.account.domain.exception.PhoneVerificationUnavailableException;
 import com.gole.api.account.domain.exception.VerificationException;
@@ -48,6 +49,7 @@ class OnboardingServiceTest {
     private InMemoryAccountRepository accounts;
     private InMemoryPhoneVerificationStore phoneVerifications;
     private RecordingAlimtalkSender alimtalk;
+    private PlainHasher passwordHasher;
     private MutableClock clock;
     private OnboardingService service;
 
@@ -57,9 +59,16 @@ class OnboardingServiceTest {
         accounts.save(account(ACCOUNT_ID, "me@gole.test"));
         phoneVerifications = new InMemoryPhoneVerificationStore();
         alimtalk = new RecordingAlimtalkSender();
+        passwordHasher = new PlainHasher();
         clock = new MutableClock(Instant.parse("2026-09-01T00:00:00Z"));
         service = new OnboardingService(
-                accounts, phoneVerifications, () -> "123456", Optional.of(alimtalk), properties(), clock);
+                accounts,
+                phoneVerifications,
+                () -> "123456",
+                Optional.of(alimtalk),
+                passwordHasher,
+                properties(),
+                clock);
     }
 
     // --- R2: 재개용 상태 조회 ---
@@ -92,7 +101,13 @@ class OnboardingServiceTest {
         OnboardingProperties phoneOptional = properties();
         phoneOptional.setPhoneVerificationRequired(false);
         OnboardingService optionalPhoneService = new OnboardingService(
-                accounts, phoneVerifications, () -> "123456", Optional.of(alimtalk), phoneOptional, clock);
+                accounts,
+                phoneVerifications,
+                () -> "123456",
+                Optional.of(alimtalk),
+                passwordHasher,
+                phoneOptional,
+                clock);
 
         optionalPhoneService.setNickname(new SetNicknameCommand(ACCOUNT_ID, "고레마스터"));
         optionalPhoneService.select(new SelectInterestTagsCommand(ACCOUNT_ID, Set.of("technic")));
@@ -144,6 +159,18 @@ class OnboardingServiceTest {
         assertThat(alimtalk.sent).hasSize(1);
         assertThat(alimtalk.sent.getFirst().to()).isEqualTo("01012345678");
         assertThat(alimtalk.sent.getFirst().variables()).containsValue("123456");
+    }
+
+    @Test
+    void issuedCodeIsStoredOnlyAsAHashNeverAsPlaintext() {
+        // Redis 조회 권한만으로 인증을 가로챌 수 없어야 한다.
+        service.request(new RequestPhoneVerificationCommand(ACCOUNT_ID, "01012345678"));
+
+        String storedCodeHash =
+                phoneVerifications.find(ACCOUNT_ID).orElseThrow().codeHash();
+        assertThat(storedCodeHash).isNotEqualTo("123456");
+        assertThat(passwordHasher.matches("123456", new PasswordHash(storedCodeHash)))
+                .isTrue();
     }
 
     @Test
@@ -212,7 +239,13 @@ class OnboardingServiceTest {
         // 정상 진행된다.
         OnboardingProperties unconfigured = new OnboardingProperties();
         OnboardingService noTemplate = new OnboardingService(
-                accounts, phoneVerifications, () -> "123456", Optional.of(alimtalk), unconfigured, clock);
+                accounts,
+                phoneVerifications,
+                () -> "123456",
+                Optional.of(alimtalk),
+                passwordHasher,
+                unconfigured,
+                clock);
 
         var requested = noTemplate.request(new RequestPhoneVerificationCommand(ACCOUNT_ID, "01012345678"));
 
@@ -225,7 +258,7 @@ class OnboardingServiceTest {
     void absentAlimtalkAdapterFailsLoudly() {
         // coolsms.enabled=false면 발송 빈 자체가 없다. 부팅은 되어야 하지만 발송은 실패해야 한다.
         OnboardingService noSender = new OnboardingService(
-                accounts, phoneVerifications, () -> "123456", Optional.empty(), properties(), clock);
+                accounts, phoneVerifications, () -> "123456", Optional.empty(), passwordHasher, properties(), clock);
 
         assertThatThrownBy(() -> noSender.request(new RequestPhoneVerificationCommand(ACCOUNT_ID, "01012345678")))
                 .isInstanceOf(PhoneVerificationUnavailableException.class);
@@ -500,6 +533,18 @@ class OnboardingServiceTest {
             }
             sent.add(command);
             return new AlimtalkAcceptance("group-1", "message-1", "2000", "OK");
+        }
+    }
+
+    private static final class PlainHasher implements PasswordHasherPort {
+        @Override
+        public PasswordHash hash(String rawPassword) {
+            return new PasswordHash("plain:" + rawPassword);
+        }
+
+        @Override
+        public boolean matches(String rawPassword, PasswordHash passwordHash) {
+            return rawPassword != null && passwordHash.value().equals("plain:" + rawPassword);
         }
     }
 

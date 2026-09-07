@@ -8,6 +8,7 @@ import com.gole.api.account.application.port.in.SelectInterestTagsUseCase;
 import com.gole.api.account.application.port.in.SetNicknameUseCase;
 import com.gole.api.account.application.port.in.SubmitOnboardingConsentUseCase;
 import com.gole.api.account.application.port.out.AccountRepositoryPort;
+import com.gole.api.account.application.port.out.PasswordHasherPort;
 import com.gole.api.account.application.port.out.PhoneVerificationStorePort;
 import com.gole.api.account.application.port.out.PhoneVerificationStorePort.PhoneVerificationChallenge;
 import com.gole.api.account.application.port.out.VerificationCodeGeneratorPort;
@@ -18,6 +19,7 @@ import com.gole.api.account.domain.model.InterestTag;
 import com.gole.api.account.domain.model.InterestTagCatalog;
 import com.gole.api.account.domain.model.Nickname;
 import com.gole.api.account.domain.model.OnboardingProfile;
+import com.gole.api.account.domain.model.PasswordHash;
 import com.gole.api.account.domain.model.PhoneNumber;
 import com.gole.api.common.exception.ConflictException;
 import com.gole.api.common.exception.NotFoundException;
@@ -63,6 +65,7 @@ public class OnboardingService
     private final PhoneVerificationStorePort phoneVerifications;
     private final VerificationCodeGeneratorPort codeGenerator;
     private final Optional<AlimtalkSenderPort> alimtalkSender;
+    private final PasswordHasherPort passwordHasher;
     private final OnboardingProperties properties;
     private final Clock clock;
 
@@ -71,12 +74,14 @@ public class OnboardingService
             PhoneVerificationStorePort phoneVerifications,
             VerificationCodeGeneratorPort codeGenerator,
             Optional<AlimtalkSenderPort> alimtalkSender,
+            PasswordHasherPort passwordHasher,
             OnboardingProperties properties,
             Clock clock) {
         this.accountRepository = accountRepository;
         this.phoneVerifications = phoneVerifications;
         this.codeGenerator = codeGenerator;
         this.alimtalkSender = alimtalkSender;
+        this.passwordHasher = passwordHasher;
         this.properties = properties;
         this.clock = clock;
     }
@@ -131,10 +136,11 @@ public class OnboardingService
         }
 
         String code = codeGenerator.generateCode();
-        sendCode(phoneNumber, code);
+        sendCode(phoneNumber, code); // 평문은 여기서만 쓰인다 — 저장에는 해시만 넘긴다.
 
+        String codeHash = passwordHasher.hash(code).value();
         phoneVerifications.issue(
-                account.getId(), new PhoneVerificationChallenge(phoneNumber.value(), code, 0), OTP_TTL);
+                account.getId(), new PhoneVerificationChallenge(phoneNumber.value(), codeHash, 0), OTP_TTL);
         phoneVerifications.startCooldown(account.getId(), RESEND_COOLDOWN);
         return new PhoneVerificationRequested(phoneNumber.masked(), OTP_TTL.toSeconds());
     }
@@ -147,7 +153,7 @@ public class OnboardingService
                 .orElseThrow(() ->
                         new VerificationException("PHONE_VERIFICATION_CODE_MISSING", "인증 코드가 만료되었습니다. 다시 요청해 주세요"));
 
-        if (!challenge.code().equals(command.code())) {
+        if (!passwordHasher.matches(command.code(), new PasswordHash(challenge.codeHash()))) {
             PhoneVerificationChallenge retried = challenge.withOneMoreAttempt();
             if (retried.attempts() >= MAX_CONFIRM_ATTEMPTS) {
                 // 5회 오답이면 해당 OTP를 무효화한다(D2) — 남은 TTL 동안 무제한 대입을 막는다.
