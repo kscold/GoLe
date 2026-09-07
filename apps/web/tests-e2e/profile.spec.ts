@@ -280,6 +280,32 @@ test.describe("내 정보", () => {
       .toBeNull();
   });
 
+  test("메일 발송이 준비 전이면 회원 탈퇴 본인확인 폼 대신 문의 안내를 보여준다", async ({
+    page,
+  }) => {
+    await page.route("**/api/v1/config/launch", (route) =>
+      route.fulfill({
+        json: {
+          stage: 2,
+          tradeMode: "MANUAL_SETTLEMENT",
+          features: { payments: true, reviews: true, partnerPayout: false },
+          sellerIdentityVerificationReady: true,
+          emailAuthenticationAvailable: false,
+          updatedAt: "2026-09-03T00:00:00Z",
+        },
+      }),
+    );
+
+    await page.goto("/profile/security");
+
+    await expect(page.getByText("탈퇴 본인확인 이메일 발송을 준비하고 있어요.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "운영팀에 탈퇴 문의하기" })).toHaveAttribute(
+      "href",
+      "mailto:coldingcontact@gmail.com?subject=GoLe%20회원%20탈퇴%20문의",
+    );
+    await expect(page.getByRole("button", { name: "탈퇴 본인확인 코드 받기" })).toHaveCount(0);
+  });
+
   test("회원 탈퇴 접수 직후 계정 관련 브라우저 값만 정리한다", async ({ page }) => {
     await page.addInitScript(() => {
       window.localStorage.setItem("gole.buyer-phone", "01012345678");
