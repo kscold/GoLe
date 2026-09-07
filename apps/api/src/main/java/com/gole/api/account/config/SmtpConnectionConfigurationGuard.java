@@ -1,6 +1,7 @@
 package com.gole.api.account.config;
 
 import jakarta.mail.MessagingException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.ApplicationArguments;
 import org.springframework.boot.ApplicationRunner;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -14,6 +15,8 @@ public class SmtpConnectionConfigurationGuard implements ApplicationRunner {
 
     private final SmtpConnectionVerifier verifier;
 
+    // 생성자가 둘이라 Spring이 주입 대상을 고르지 못한다. 테스트용 생성자와 구분해 명시한다.
+    @Autowired
     public SmtpConnectionConfigurationGuard(JavaMailSenderImpl mailSender) {
         this(mailSender::testConnection);
     }

@@ -340,10 +340,14 @@ fi
 [ "$(sha256sum /etc/gole/gole.env | cut -d' ' -f1)" = "$baseline_hash" ]
 ! grep -Fq 'developer@example.test' /tmp/development.out
 
-# A newer payload carrying a stale SMTP credential is rejected before install
-# and the credential value never reaches the retained workflow output.
+# validate-production-env.py checks the email latch conditionally now: a
+# credential is only accepted together with GOLE_VERIFICATION_EMAIL_ENABLED=
+# true. This payload still has the latch off (Stage 0's baseline), so a
+# leftover SMTP credential makes it an inconsistent payload that must still
+# be rejected before install, and the credential value must never reach the
+# retained workflow output either way.
 if run_sync 10 00000000-0000-0000-0000-000000000010 >/tmp/smtp.out 2>&1; then
-  echo 'credentialed SMTP environment was accepted during Stage 0' >&2
+  echo 'inconsistent latch/credential SMTP environment was accepted during Stage 0' >&2
   exit 1
 fi
 [ "$(cat /etc/gole/gole.env.version)" = 5 ]
