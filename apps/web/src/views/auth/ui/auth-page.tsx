@@ -161,6 +161,11 @@ function AuthPageContent({ welcome }: { readonly welcome: boolean }) {
     return returnTo === null ? target : `${target}?returnTo=${encodeURIComponent(returnTo)}`;
   }
 
+  /** 가입 직후와 미인증 로그인이 같은 인증 화면으로 모이고, 둘 다 복귀 경로를 유지한다. */
+  function verifyHref(): string {
+    return returnTo === null ? "/verify" : `/verify?returnTo=${encodeURIComponent(returnTo)}`;
+  }
+
   return (
     <AuthCard
       title={mode === "signup" ? "회원가입" : "로그인"}
@@ -208,6 +213,10 @@ function AuthPageContent({ welcome }: { readonly welcome: boolean }) {
                 : `/forgot-password?returnTo=${encodeURIComponent(returnTo)}`
             }
             onSignedIn={(signedIn) => goAfterAuth(signedIn.role, signedIn.onboardingRequired)}
+            onNeedsVerification={(email) => {
+              storePendingVerificationEmail(email, "sign-in");
+              router.push(verifyHref());
+            }}
           />
         ) : (
           <SignUpForm
@@ -217,13 +226,8 @@ function AuthPageContent({ welcome }: { readonly welcome: boolean }) {
             policyAcceptance={signupPolicyAcceptance}
             onPolicyAcceptanceChange={setSignupPolicyAcceptance}
             onRegistered={(email) => {
-              storePendingVerificationEmail(email);
-              const next = new URLSearchParams();
-              if (returnTo !== null) {
-                next.set("returnTo", returnTo);
-              }
-              const query = next.toString();
-              router.push(query.length === 0 ? "/verify" : `/verify?${query}`);
+              storePendingVerificationEmail(email, "sign-up");
+              router.push(verifyHref());
             }}
           />
         )}

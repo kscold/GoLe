@@ -22,5 +22,7 @@ export {
   clearPendingVerificationEmail,
   readPendingVerificationEmail,
   storePendingVerificationEmail,
+  takePendingVerificationOrigin,
 } from "./pending-verification-email";
+export type { PendingVerificationOrigin } from "./pending-verification-email";
 export type { BreadcrumbItem } from "./seo";
