@@ -1,5 +1,14 @@
 #!/usr/bin/env python3
-"""Create a fail-closed SMTP-disabled Stage 0 env without sourcing the input."""
+"""Create a fail-closed production env without sourcing the input.
+
+The Stage 0 email latch (GOLE_VERIFICATION_EMAIL_ENABLED) and the SMTP
+identity it gates pass through from the input unchanged: this script only
+forces the exact policy values in validate-production-env.py's EXACT_VALUES,
+which no longer includes the latch or its identity fields. Whatever
+combination the input carries still has to satisfy the validator's
+conditional check below, so a mismatched latch/identity pair is rejected the
+same as before.
+"""
 
 from __future__ import annotations
 
@@ -19,7 +28,10 @@ KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 COMMENTED_ASSIGNMENT_PATTERN = re.compile(
     r"^\s*#\s*(?:export\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*="
 )
-DISABLED_SMTP_SECRET_KEYS = frozenset(
+# Stray commented-out copies of these are dropped from the rendered candidate
+# regardless of the latch state below, so an old draft can never leave a
+# leftover secret sitting in a comment.
+EMAIL_LATCH_SECRET_KEYS = frozenset(
     {"SMTP_USERNAME", "SMTP_PASSWORD", "GOLE_VERIFICATION_EMAIL_FROM"}
 )
 
@@ -69,7 +81,7 @@ def render_candidate(
         commented_assignment = COMMENTED_ASSIGNMENT_PATTERN.match(line)
         if (
             commented_assignment is not None
-            and commented_assignment.group(1) in DISABLED_SMTP_SECRET_KEYS
+            and commented_assignment.group(1) in EMAIL_LATCH_SECRET_KEYS
         ):
             continue
         if not line.strip() or line.lstrip().startswith("#") or "=" not in line:
@@ -116,7 +128,7 @@ def create_candidate(contents: str, output_directory: pathlib.Path) -> pathlib.P
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(
-        description="Preserve an env payload while enforcing the SMTP-disabled Stage 0 policy."
+        description="Preserve an env payload while enforcing the production environment policy."
     )
     parser.add_argument("input", type=pathlib.Path)
     parser.add_argument(

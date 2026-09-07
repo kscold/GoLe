@@ -25,6 +25,12 @@ import sys
 
 raw = open(sys.argv[1], encoding="utf-8").read()
 deploy = open(sys.argv[2], encoding="utf-8").read()
+# Only the live (non-comment) YAML lines matter for the email-latch check
+# below — validator/compose comments that document the conditional latch
+# design are allowed to mention "true" without tripping it.
+raw_live = "\n".join(
+    line for line in raw.splitlines() if not line.strip().startswith("#")
+)
 failures = []
 
 
@@ -77,10 +83,10 @@ check(
 )
 check(
     "Stage 0 CD는 이메일 발송과 mail health를 명시적으로 비활성화한다",
-    re.search(r'GOLE_VERIFICATION_EMAIL_ENABLED:\s*["\']false["\']', raw) is not None
-    and re.search(r'GOLE_MAIL_HEALTH_ENABLED:\s*["\']false["\']', raw) is not None
-    and re.search(r'GOLE_VERIFICATION_EMAIL_ENABLED:\s*["\']true["\']', raw) is None
-    and re.search(r'GOLE_MAIL_HEALTH_ENABLED:\s*["\']true["\']', raw) is None,
+    re.search(r'GOLE_VERIFICATION_EMAIL_ENABLED:\s*["\']false["\']', raw_live) is not None
+    and re.search(r'GOLE_MAIL_HEALTH_ENABLED:\s*["\']false["\']', raw_live) is not None
+    and re.search(r'GOLE_VERIFICATION_EMAIL_ENABLED:\s*["\']true["\']', raw_live) is None
+    and re.search(r'GOLE_MAIL_HEALTH_ENABLED:\s*["\']true["\']', raw_live) is None,
 )
 check(
     "CD는 비밀 payload 대신 exact Secret version만 root helper에 전달한다",

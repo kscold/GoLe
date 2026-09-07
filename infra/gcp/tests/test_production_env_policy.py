@@ -59,13 +59,77 @@ class ProductionEnvironmentPolicyTest(unittest.TestCase):
                 self.assertIn(key, result.stderr)
                 self.assertNotIn(value, result.stderr)
 
-    def test_stage_zero_email_delivery_contract_is_exact(self) -> None:
+    def test_stage_zero_mail_health_and_transport_security_are_exact(self) -> None:
         namespace = runpy.run_path(str(VALIDATOR), run_name="gole_production_env_policy")
         exact = namespace["EXACT_VALUES"]
-        self.assertEqual("false", exact["GOLE_VERIFICATION_EMAIL_ENABLED"])
         self.assertEqual("false", exact["GOLE_MAIL_HEALTH_ENABLED"])
+        for key in (
+            "SMTP_AUTH",
+            "SMTP_STARTTLS",
+            "SMTP_STARTTLS_REQUIRED",
+            "SMTP_SSL_CHECKSERVERIDENTITY",
+        ):
+            self.assertEqual("true", exact[key])
+        # The latch itself and the identity fields it gates are no longer
+        # exact-matched: they are validated conditionally instead.
+        self.assertNotIn("GOLE_VERIFICATION_EMAIL_ENABLED", exact)
         for key in ("SMTP_USERNAME", "SMTP_PASSWORD", "GOLE_VERIFICATION_EMAIL_FROM"):
-            self.assertEqual("", exact[key])
+            self.assertNotIn(key, exact)
+
+    def test_email_latch_rejects_anything_other_than_true_or_false(self) -> None:
+        original = self._read_fixture()
+        for value in ("True", "FALSE", "1", "0", ""):
+            with self.subTest(value=value):
+                mutated = dict(original)
+                mutated["GOLE_VERIFICATION_EMAIL_ENABLED"] = value
+                result = self._validate_mapping(mutated)
+                self.assertEqual(1, result.returncode)
+                self.assertIn("GOLE_VERIFICATION_EMAIL_ENABLED", result.stderr)
+
+    def test_email_latch_true_requires_a_full_identity(self) -> None:
+        original = self._read_fixture()
+        full_identity = {
+            "SMTP_USERNAME": "verified-mailbox@example.test",
+            "SMTP_PASSWORD": "verified-app-password",
+            "GOLE_VERIFICATION_EMAIL_FROM": "verified-sender@example.test",
+        }
+        for missing_key in full_identity:
+            with self.subTest(missing=missing_key):
+                mutated = dict(original)
+                mutated["GOLE_VERIFICATION_EMAIL_ENABLED"] = "true"
+                mutated.update(full_identity)
+                mutated[missing_key] = ""
+                result = self._validate_mapping(mutated)
+                self.assertEqual(1, result.returncode)
+                self.assertIn(missing_key, result.stderr)
+
+    def test_email_latch_true_accepts_a_full_identity_without_echoing_it(self) -> None:
+        original = self._read_fixture()
+        mutated = dict(original)
+        mutated["GOLE_VERIFICATION_EMAIL_ENABLED"] = "true"
+        mutated.update(
+            {
+                "SMTP_USERNAME": "verified-mailbox@example.test",
+                "SMTP_PASSWORD": "verified-app-password",
+                "GOLE_VERIFICATION_EMAIL_FROM": "verified-sender@example.test",
+            }
+        )
+        result = self._validate_mapping(mutated)
+        self.assertEqual(0, result.returncode, result.stderr)
+        # The always-on transport security invariants stay pinned even once
+        # the latch is enabled.
+        for key in (
+            "SMTP_AUTH",
+            "SMTP_STARTTLS",
+            "SMTP_STARTTLS_REQUIRED",
+            "SMTP_SSL_CHECKSERVERIDENTITY",
+        ):
+            with self.subTest(key=key):
+                weakened = dict(mutated)
+                weakened[key] = "false"
+                result = self._validate_mapping(weakened)
+                self.assertEqual(1, result.returncode)
+                self.assertIn(key, result.stderr)
 
     def test_policy_validation_precedes_privileged_install(self) -> None:
         hostctl = (ROOT / "infra/gcp/scripts/gole-hostctl.sh").read_text()
@@ -98,10 +162,17 @@ class ProductionEnvironmentPolicyTest(unittest.TestCase):
         return tuple(namespace["EXACT_VALUES"])
 
     def _validate_mapping(self, values: dict[str, str]) -> subprocess.CompletedProcess[str]:
-        with tempfile.NamedTemporaryFile("w", encoding="utf-8") as candidate:
+        # delete=False + manual cleanup: an open NamedTemporaryFile cannot be
+        # reopened by the validator subprocess on Windows.
+        candidate = tempfile.NamedTemporaryFile(
+            "w", encoding="utf-8", delete=False, suffix=".env"
+        )
+        try:
             candidate.write("".join(f"{key}={value}\n" for key, value in values.items()))
-            candidate.flush()
+            candidate.close()
             return run_validator(pathlib.Path(candidate.name))
+        finally:
+            pathlib.Path(candidate.name).unlink(missing_ok=True)
 
 
 if __name__ == "__main__":

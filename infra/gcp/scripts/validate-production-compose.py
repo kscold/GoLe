@@ -279,11 +279,9 @@ EXPECTED_MEMORY_LIMITS = {
 EXPECTED_ENVIRONMENT_VALUES = {
     "backend": {
         "GOLE_ENVIRONMENT": "production",
-        "GOLE_VERIFICATION_EMAIL_ENABLED": "false",
+        # GOLE_VERIFICATION_EMAIL_ENABLED and the SMTP identity it gates are
+        # validated conditionally below, not as a fixed exact value.
         "GOLE_MAIL_HEALTH_ENABLED": "false",
-        "SMTP_USERNAME": "",
-        "SMTP_PASSWORD": "",
-        "GOLE_VERIFICATION_EMAIL_FROM": "",
         "PORTONE_ENABLED": "false",
         "GOLE_SETTLEMENT_MODE": "DISABLED",
         "GOLE_SETTLEMENT_PAYOUT_CONTRACT_VERIFIED": "false",
@@ -735,6 +733,31 @@ def validate(
                         )
         else:
             reject(build is not None, f"service {name} unexpectedly builds a local image")
+
+    if not allow_legacy_adoption:
+        # GOLE_VERIFICATION_EMAIL_ENABLED must be exactly "true" or "false",
+        # and the SMTP identity it gates must be empty together with it
+        # (false) or fully present together with it (true). A partially
+        # filled identity is rejected either way — this stays fail-closed.
+        backend_environment = services["backend"].get("environment", {})
+        email_enabled = str(backend_environment.get("GOLE_VERIFICATION_EMAIL_ENABLED"))
+        reject(
+            email_enabled not in {"true", "false"},
+            "service backend protected environment value changed: GOLE_VERIFICATION_EMAIL_ENABLED",
+        )
+        email_identity_keys = ("SMTP_USERNAME", "SMTP_PASSWORD", "GOLE_VERIFICATION_EMAIL_FROM")
+        if email_enabled == "false":
+            for key in email_identity_keys:
+                reject(
+                    str(backend_environment.get(key, "")) != "",
+                    f"service backend protected environment value changed: {key}",
+                )
+        else:
+            for key in email_identity_keys:
+                reject(
+                    not backend_environment.get(key),
+                    f"service backend protected environment value changed: {key}",
+                )
 
     if not allow_legacy_adoption and not allow_missing_discord_overlay:
         backend_environment = services["backend"].get("environment", {})

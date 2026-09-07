@@ -12,20 +12,20 @@ EXACT_VALUES = {
     "GOLE_ENVIRONMENT": "production",
     "GOLE_ONBOARDING_PHONE_REQUIRED": "false",
     "GOLE_ONBOARDING_LOG_VERIFICATION_CODES": "false",
-    # SMTP is deliberately unavailable for the initial public launch.  These
-    # values are exact so an old Secret version cannot silently turn delivery
-    # (or Spring's mail health probe) back on.
-    "GOLE_VERIFICATION_EMAIL_ENABLED": "false",
+    # SMTP is deliberately unavailable for the initial public launch, and
+    # Spring's mail health probe stays off with it. Unlike the identity
+    # fields below, this is not part of the email latch: flipping the latch
+    # on does not also turn the health probe on by itself.
     "GOLE_MAIL_HEALTH_ENABLED": "false",
     "SMTP_HOST": "smtp.gmail.com",
     "SMTP_PORT": "587",
-    "SMTP_USERNAME": "",
-    "SMTP_PASSWORD": "",
+    # Plaintext/unauthenticated relays and unverified TLS certificates are
+    # never acceptable, so these four stay pinned to "true" regardless of
+    # whether GOLE_VERIFICATION_EMAIL_ENABLED is later switched on.
     "SMTP_AUTH": "true",
     "SMTP_STARTTLS": "true",
     "SMTP_STARTTLS_REQUIRED": "true",
     "SMTP_SSL_CHECKSERVERIDENTITY": "true",
-    "GOLE_VERIFICATION_EMAIL_FROM": "",
     "GOLE_CATALOG_SEED": "false",
     "GOLE_LISTING_SEED": "false",
     "GOLE_PRICING_SEED": "false",
@@ -75,6 +75,14 @@ EXACT_VALUES = {
     "GOLE_SETTLEMENT_PAYOUT_CONTRACT_VERIFIED": "false",
 }
 
+# The Stage 0 email latch itself and the identity fields it gates. These are
+# no longer checked against a single fixed value: GOLE_VERIFICATION_EMAIL_ENABLED
+# must be exactly "true" or "false", and the three identity fields must be
+# empty together with it (false) or all present together with it (true).
+# Fail-closed either way — a partially-filled identity is always rejected.
+EMAIL_LATCH_KEY = "GOLE_VERIFICATION_EMAIL_ENABLED"
+EMAIL_IDENTITY_KEYS = ("SMTP_USERNAME", "SMTP_PASSWORD", "GOLE_VERIFICATION_EMAIL_FROM")
+
 KEY_PATTERN = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
 class PolicyError(ValueError):
     """Production environment violates a deploy-time invariant."""
@@ -110,6 +118,22 @@ def validate(values: dict[str, str]) -> None:
         for key, expected in EXACT_VALUES.items()
         if values.get(key) != expected
     ]
+
+    email_enabled = values.get(EMAIL_LATCH_KEY)
+    if email_enabled not in ("true", "false"):
+        violations.append(f"{EMAIL_LATCH_KEY} must be explicitly set to true or false")
+    elif email_enabled == "false":
+        violations.extend(
+            f"{key} must be empty while {EMAIL_LATCH_KEY}=false"
+            for key in EMAIL_IDENTITY_KEYS
+            if values.get(key, "") != ""
+        )
+    else:
+        violations.extend(
+            f"{key} must be set while {EMAIL_LATCH_KEY}=true"
+            for key in EMAIL_IDENTITY_KEYS
+            if not values.get(key)
+        )
 
     optional_public_ids = {
         "NEXT_PUBLIC_GA_MEASUREMENT_ID": r"G-[A-Z0-9]+",
