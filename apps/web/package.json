@@ -27,7 +27,7 @@
     "@feature-sliced/steiger-plugin": "^0.5.7",
     "@playwright/test": "^1.49.0",
     "@tailwindcss/postcss": "^4.3.0",
-    "@types/node": "^22",
+    "@types/node": "^26",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "eslint": "^9",
