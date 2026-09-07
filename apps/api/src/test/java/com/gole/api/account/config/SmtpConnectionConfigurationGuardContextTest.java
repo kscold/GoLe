@@ -20,8 +20,7 @@ class SmtpConnectionConfigurationGuardContextTest {
 
     @Test
     void disabledByDefaultDoesNotRegisterGuard() {
-        contextRunner.run(
-                context -> assertThat(context).doesNotHaveBean(SmtpConnectionConfigurationGuard.class));
+        contextRunner.run(context -> assertThat(context).doesNotHaveBean(SmtpConnectionConfigurationGuard.class));
     }
 
     @Test
@@ -32,11 +31,9 @@ class SmtpConnectionConfigurationGuardContextTest {
         // beans are never invoked here; JavaMailSenderImpl gets no host, so a real connection
         // attempt would fail immediately rather than hang, and this still passes, confirming
         // the verifier's run() never fires just from refreshing the context.
-        contextRunner
-                .withPropertyValues("gole.verification.email.enabled=true")
-                .run(context -> {
-                    assertThat(context).hasNotFailed();
-                    assertThat(context).hasSingleBean(SmtpConnectionConfigurationGuard.class);
-                });
+        contextRunner.withPropertyValues("gole.verification.email.enabled=true").run(context -> {
+            assertThat(context).hasNotFailed();
+            assertThat(context).hasSingleBean(SmtpConnectionConfigurationGuard.class);
+        });
     }
 }
