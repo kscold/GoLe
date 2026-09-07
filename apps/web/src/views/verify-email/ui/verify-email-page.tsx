@@ -10,6 +10,7 @@ import {
   clearPendingVerificationEmail,
   readPendingVerificationEmail,
   resolveReturnTo,
+  takePendingVerificationOrigin,
 } from "@shared/lib";
 
 function VerifyEmailContent() {
@@ -17,9 +18,15 @@ function VerifyEmailContent() {
   const searchParams = useSearchParams();
   const hasLegacyEmailQuery = searchParams.has("email");
   const [email] = useState(readPendingVerificationEmail);
+  // 읽으면서 지우는 1회용 마커다. 새로고침해도 코드가 다시 나가지 않는다.
+  const [origin] = useState(takePendingVerificationOrigin);
   const returnTo = resolveReturnTo(searchParams.get("returnTo"));
   const loginHref =
     returnTo === null ? "/login" : `/login?returnTo=${encodeURIComponent(returnTo)}`;
+  const resetHref =
+    returnTo === null
+      ? "/forgot-password"
+      : `/forgot-password?returnTo=${encodeURIComponent(returnTo)}`;
   const [emailAuthenticationAvailable, setEmailAuthenticationAvailable] = useState<boolean | null>(
     null,
   );
@@ -76,6 +83,11 @@ function VerifyEmailContent() {
   return (
     <VerifyEmailForm
       initialEmail={email}
+      // 로그인 경유는 아직 코드가 없다. 가입 직후는 register가 이미 보냈고 쿨다운도 소비했다.
+      autoRequestCode={origin === "sign-in"}
+      initialResendCooldownSeconds={origin === null ? 0 : 60}
+      loginHref={loginHref}
+      resetHref={resetHref}
       onVerified={() => {
         clearPendingVerificationEmail();
         router.replace(loginHref);

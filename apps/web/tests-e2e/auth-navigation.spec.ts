@@ -155,8 +155,23 @@ test.describe("Auth navigation", () => {
     await page.goto("/verify");
     await expect(page.getByRole("heading", { name: "이메일 인증" })).toBeVisible();
     await expect(page.getByRole("button", { name: "인증하기" })).toBeVisible();
-    await expect(page.getByRole("button", { name: /인증 코드 다시 받기/ })).toBeDisabled();
+    // 출처 없이 직접 들어온 진입은 방금 나간 코드가 없다. 기다리게 하지 않는다.
+    await expect(page.getByRole("button", { name: "인증 코드 다시 받기" })).toBeEnabled();
     await expect(page).toHaveURL("/verify");
+  });
+
+  test("인증 화면은 코드가 오지 않는 계정에게 상시 출구를 보여준다", async ({ page }) => {
+    await page.goto("/verify?returnTo=%2Fcollection");
+
+    await expect(page.getByText("이미 가입을 마친 계정일 수 있어요.")).toBeVisible();
+    await expect(page.getByRole("link", { name: "로그인하기" })).toHaveAttribute(
+      "href",
+      "/login?returnTo=%2Fcollection",
+    );
+    await expect(page.getByRole("link", { name: "비밀번호 찾기" })).toHaveAttribute(
+      "href",
+      "/forgot-password?returnTo=%2Fcollection",
+    );
   });
 
   test("과거 인증 이메일 query는 저장하거나 폼에 복원하지 않고 URL에서 제거한다", async ({
@@ -173,7 +188,8 @@ test.describe("Auth navigation", () => {
       .toBeNull();
   });
 
-  test("미인증 로그인은 이메일 인증 화면으로 복구할 수 있다", async ({ page }) => {
+  test("미인증 로그인은 인증 화면으로 바로 넘어가며 코드를 한 번 발송한다", async ({ page }) => {
+    let resendCount = 0;
     await page.route("**/api/v1/accounts/sessions", async (route) => {
       await route.fulfill({
         status: 403,
@@ -184,16 +200,61 @@ test.describe("Auth navigation", () => {
         }),
       });
     });
+    await page.route("**/api/v1/accounts/verification/resend", async (route) => {
+      resendCount += 1;
+      await route.fulfill({ status: 204, body: "" });
+    });
+
     await page.goto("/login");
     await page.getByLabel("이메일").fill("pending@gole.com");
     await page.getByLabel("비밀번호").fill("password1");
     await page.getByRole("button", { name: "로그인" }).click();
 
-    const recovery = page.getByRole("link", { name: "이메일 인증하러 가기" });
-    await expect(recovery).toBeVisible();
-    await expect(recovery).toHaveAttribute("href", "/verify");
-    await recovery.click();
+    // 오류 상자에 머무르지 않고 다음 단계로 넘어간다.
+    await expect(page).toHaveURL("/verify");
     await expect(page.getByLabel("이메일")).toHaveValue("pending@gole.com");
+    await expect.poll(() => resendCount).toBe(1);
+    await expect(page.getByRole("button", { name: /초 후 인증 코드 다시 받기/ })).toBeDisabled();
+    await expect(page.getByText("인증이 필요한 계정이면 코드를 보내드립니다.")).toBeVisible();
+
+    // 1회용 출처 마커를 소비했으므로 새로고침해도 다시 보내지 않는다.
+    await page.reload();
+    await expect(page.getByRole("button", { name: "인증하기" })).toBeVisible();
+    await expect.poll(() => resendCount).toBe(1);
+  });
+
+  test("가입 직후 인증 화면은 코드를 다시 발송하지 않는다", async ({ page }) => {
+    let resendCount = 0;
+    await page.route("**/api/v1/policies/current", (route) =>
+      route.fulfill({
+        json: {
+          termsVersion: "2026-09-04",
+          privacyVersion: "2026-09-05",
+          thirdPartyProvisionVersion: "2026-09-04",
+          minimumAge: 14,
+        },
+      }),
+    );
+    await page.route("**/api/v1/accounts/verification/resend", async (route) => {
+      resendCount += 1;
+      await route.fulfill({ status: 204, body: "" });
+    });
+    await page.route("**/api/v1/accounts", (route) =>
+      route.fulfill({ status: 201, json: { accountId: "registration-pending" } }),
+    );
+
+    await page.goto("/signup");
+    await page.getByRole("checkbox", { name: /이용약관/ }).check();
+    await page.getByRole("checkbox", { name: /개인정보처리방침/ }).check();
+    await page.getByRole("checkbox", { name: /만 14세 이상/ }).check();
+    await page.getByLabel("이메일").fill("fresh@gole.test");
+    await page.getByLabel("비밀번호").fill("password1");
+    await page.getByRole("button", { name: "이메일로 가입하기" }).click();
+
+    await expect(page).toHaveURL("/verify");
+    // register가 이미 보냈다. 여기서 또 보내면 수신자 일일 한도만 태운다.
+    await expect(page.getByRole("button", { name: /초 후 인증 코드 다시 받기/ })).toBeDisabled();
+    expect(resendCount).toBe(0);
   });
 
   test("메일 발송이 준비 전이면 이메일 challenge만 닫고 기존 로그인을 유지한다", async ({
@@ -232,7 +293,8 @@ test.describe("Auth navigation", () => {
     await expect(page.getByRole("checkbox", { name: /이용약관/ })).toBeVisible();
   });
 
-  test("메일 발송이 준비 전이면 미인증 로그인 복구 링크도 노출하지 않는다", async ({ page }) => {
+  test("메일 발송이 준비 전이면 미인증 로그인을 인증 화면으로 보내지 않는다", async ({ page }) => {
+    let resendCount = 0;
     await page.route("**/api/v1/config/launch", (route) =>
       route.fulfill({
         json: {
@@ -245,6 +307,10 @@ test.describe("Auth navigation", () => {
         },
       }),
     );
+    await page.route("**/api/v1/accounts/verification/resend", async (route) => {
+      resendCount += 1;
+      await route.fulfill({ status: 204, body: "" });
+    });
     await page.route("**/api/v1/accounts/sessions", async (route) => {
       await route.fulfill({
         status: 403,
@@ -255,6 +321,7 @@ test.describe("Auth navigation", () => {
         }),
       });
     });
+
     await page.goto("/login");
     await page.getByLabel("이메일").fill("pending@gole.com");
     await page.getByLabel("비밀번호").fill("password1");
@@ -263,7 +330,9 @@ test.describe("Auth navigation", () => {
     await expect(
       page.getByRole("alert").filter({ hasText: "이메일 인증을 완료해 주세요" }),
     ).toBeVisible();
+    await expect(page).toHaveURL("/login");
     await expect(page.getByRole("link", { name: "이메일 인증하러 가기" })).toHaveCount(0);
+    expect(resendCount).toBe(0);
   });
 
   test("메일 발송이 준비 전이면 인증 코드 화면에 직접 들어가도 닫혀 있다", async ({ page }) => {
