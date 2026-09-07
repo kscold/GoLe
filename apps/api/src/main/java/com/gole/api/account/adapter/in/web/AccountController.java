@@ -172,7 +172,8 @@ public class AccountController {
 
     @Operation(
             summary = "내 정보 조회",
-            description = "현재 세션의 계정 ID·이메일·권한을 반환합니다. 브라우저 쿠키 또는 Authorization: Bearer {token}이 필요합니다.")
+            description = "현재 세션의 계정 ID·이메일·권한·닉네임을 반환합니다. 온보딩에서 닉네임을 아직 설정하지 않았다면 null입니다. "
+                    + "브라우저 쿠키 또는 Authorization: Bearer {token}이 필요합니다.")
     @GetMapping("/me")
     public MeResponse me(HttpServletRequest request) {
         String token = sessionCookie.resolve(request);
@@ -180,7 +181,11 @@ public class AccountController {
                 .resolve(token)
                 .orElseThrow(() -> new UnauthorizedException("INVALID_SESSION", "유효한 세션이 아닙니다"));
         return new MeResponse(
-                session.accountId(), session.email(), session.role().name(), session.onboardingRequired());
+                session.accountId(),
+                session.email(),
+                session.role().name(),
+                session.onboardingRequired(),
+                session.nickname());
     }
 
     @Operation(summary = "로그아웃", description = "브라우저 쿠키 또는 Bearer 토큰에 연결된 서버 세션을 폐기하고 쿠키를 삭제합니다.")

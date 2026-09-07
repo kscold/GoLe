@@ -249,7 +249,10 @@ public class AccountService
                         account.getId(),
                         account.getEmail().value(),
                         account.getRole(),
-                        account.isOnboardingRequired(onboardingProperties.phoneVerificationRequired())));
+                        account.isOnboardingRequired(onboardingProperties.phoneVerificationRequired()),
+                        account.getOnboarding().hasNickname()
+                                ? account.getNickname().value()
+                                : null));
     }
 
     @Override
