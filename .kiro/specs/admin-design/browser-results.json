@@ -1,0 +1,52 @@
+{
+  "mobile": {
+    "height": 1458,
+    "overflow": false,
+    "width": 674
+  },
+  "conflict": {
+    "disabled": true,
+    "draft": "#005544",
+    "message": true
+  },
+  "reset": {
+    "posts": [
+      {
+        "method": "POST",
+        "url": "http://localhost:8090/api/admin/design/publish"
+      },
+      {
+        "method": "POST",
+        "url": "http://localhost:8090/api/admin/design/publish"
+      },
+      {
+        "method": "POST",
+        "url": "http://localhost:8090/api/admin/design/publish"
+      },
+      {
+        "method": "POST",
+        "url": "http://localhost:8090/api/admin/design/restore"
+      }
+    ],
+    "published": true,
+    "root": "#1d4ed8"
+  },
+  "mobile390": {
+    "designLink": true,
+    "height": 843,
+    "inputs": 23,
+    "operationsLink": true,
+    "overflow": false,
+    "trackerLink": true,
+    "width": 390
+  },
+  "desktop": {
+    "designLink": true,
+    "height": 1000,
+    "inputs": 23,
+    "operationsLink": true,
+    "overflow": false,
+    "trackerLink": true,
+    "width": 1441
+  }
+}

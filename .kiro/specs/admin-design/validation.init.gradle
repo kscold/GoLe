@@ -1,0 +1,10 @@
+allprojects {
+    layout.buildDirectory.set(file('/tmp/gole-admin-design-validation'))
+    afterEvaluate {
+        spotless {
+            java {
+                target('src/main/java/com/gole/api/design/**/*.java', 'src/test/java/com/gole/api/design/**/*.java')
+            }
+        }
+    }
+}

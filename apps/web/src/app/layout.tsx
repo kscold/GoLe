@@ -6,6 +6,7 @@ import { CoreBootstrap } from "@shared/config/core-bootstrap";
 import { AnalyticsConsentManager } from "@widgets/analytics-consent";
 import { analyticsRuntimeConfig, BUSINESS_INFO, env } from "@shared/config";
 import { JsonLd } from "@shared/ui";
+import { DesignTheme } from "@shared/ui/design-theme";
 import "./globals.css";
 
 const SITE_NAME = "GoLe";
@@ -106,6 +107,7 @@ export default function RootLayout({ children }: Readonly<{ children: ReactNode 
     <html lang="ko" data-scroll-behavior="smooth">
       <body>
         <CoreBootstrap />
+        <DesignTheme />
         {children}
         <StructuredData />
         <Suspense fallback={null}>

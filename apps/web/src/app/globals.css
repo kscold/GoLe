@@ -223,6 +223,8 @@
 
 @layer base {
   html {
+    --design-font-size: 16px;
+    font-size: var(--design-font-size);
     font-family: var(--font-sans);
     color: var(--color-neutral-900);
     background-color: var(--color-neutral-50);
