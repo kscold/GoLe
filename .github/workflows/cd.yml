@@ -248,6 +248,9 @@ jobs:
             exit "$status"
           }
           trap restore_checkout_on_failure EXIT
+          if [ "$(git rev-parse --is-shallow-repository)" = true ]; then
+            git fetch --unshallow origin
+          fi
           git fetch --prune origin main
           if [ -n "$(git status --porcelain=v1 --untracked-files=all)" ]; then
             echo "운영 checkout에 커밋되지 않은 변경이 있어 배포를 중단한다" >&2
