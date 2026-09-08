@@ -6,10 +6,12 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
+import java.util.LinkedHashMap;
 import java.util.Map;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.stereotype.Component;
@@ -29,8 +31,6 @@ import tools.jackson.databind.ObjectMapper;
 @Component
 @ConditionalOnProperty(name = "shipping.tracker.enabled", havingValue = "true")
 public class DeliveryTrackerApiAdapter implements DeliveryTrackerPort {
-
-    private static final Logger log = LoggerFactory.getLogger(DeliveryTrackerApiAdapter.class);
 
     /**
      * Delivery Tracker 표준 상태 코드 → 도메인 상태. (F3 매핑 테이블)
@@ -60,13 +60,56 @@ public class DeliveryTrackerApiAdapter implements DeliveryTrackerPort {
     private final String clientSecret;
     private final Duration timeout;
 
+    private final Clock clock;
+    private final Map<String, Cached> recent = new LinkedHashMap<>();
+    private Instant lastSuccessAt;
+    private Instant lastFailureAt;
+    private String lastFailure;
+    private Instant nextRequestAt = Instant.EPOCH;
+    private Instant requestWindow = Instant.EPOCH;
+    private int requestCount;
+    private Instant nextVerificationAt = Instant.EPOCH;
+    private boolean connected;
+
+    private record Cached(TrackingResult result, Instant expiresAt) {}
+
+    @Autowired
     public DeliveryTrackerApiAdapter(
             ObjectMapper objectMapper,
             @Value("${shipping.tracker.api-base:https://apis.tracker.delivery/graphql}") String apiBase,
             @Value("${shipping.tracker.client-id:}") String clientId,
             @Value("${shipping.tracker.client-secret:}") String clientSecret,
             @Value("${shipping.tracker.timeout:PT5S}") Duration timeout) {
-        this.httpClient = HttpClient.newBuilder().connectTimeout(timeout).build();
+        this(
+                objectMapper,
+                apiBase,
+                clientId,
+                clientSecret,
+                timeout,
+                HttpClient.newBuilder()
+                        .connectTimeout(timeout)
+                        .followRedirects(HttpClient.Redirect.NEVER)
+                        .build(),
+                Clock.systemUTC());
+    }
+
+    DeliveryTrackerApiAdapter(
+            ObjectMapper objectMapper,
+            String apiBase,
+            String clientId,
+            String clientSecret,
+            Duration timeout,
+            HttpClient httpClient,
+            Clock clock) {
+        if (!"https://apis.tracker.delivery/graphql".equals(apiBase)) {
+            throw new IllegalArgumentException(
+                    "Delivery Tracker endpoint must be https://apis.tracker.delivery/graphql");
+        }
+        if (timeout.isNegative() || timeout.isZero() || timeout.compareTo(Duration.ofSeconds(15)) > 0) {
+            throw new IllegalArgumentException("Tracker timeout must be within 0–15 seconds");
+        }
+        this.httpClient = httpClient;
+        this.clock = clock;
         this.objectMapper = objectMapper;
         this.endpoint = URI.create(apiBase);
         this.clientId = clientId;
@@ -80,19 +123,65 @@ public class DeliveryTrackerApiAdapter implements DeliveryTrackerPort {
     }
 
     @Override
-    public TrackingResult track(TrackingQuery query) {
-        if (!isConfigured()) {
-            log.warn("Delivery Tracker 자격증명이 없어 조회를 건너뜁니다 (shipping.tracker.client-id/secret)");
-            return new TrackingResult(DeliveryStatus.UNKNOWN, null);
+    public synchronized Diagnostics diagnostics() {
+        return new Diagnostics(true, isConfigured(), connected, lastSuccessAt, lastFailureAt, lastFailure);
+    }
+
+    @Override
+    public synchronized Diagnostics verifyConnection() {
+        Instant now = clock.instant();
+        if (now.isBefore(nextVerificationAt)) return diagnostics();
+        nextVerificationAt = now.plusSeconds(60);
+        JsonNode root = request("query { carriers(first: 1) { edges { node { id } } } }", Map.of());
+        if (root != null) {
+            if (root.path("data").path("carriers").isObject()) success();
+            else failure("INVALID_RESPONSE");
         }
+        return diagnostics();
+    }
+
+    /** Single-flight and bounded cooldown also protect scheduler/cache-outage paths. */
+    @Override
+    public synchronized TrackingResult track(TrackingQuery query) {
+        String key = query.carrier().name() + ":" + query.waybill().value();
+        Instant now = clock.instant();
+        Cached cached = recent.get(key);
+        if (cached != null && now.isBefore(cached.expiresAt())) return cached.result();
+        JsonNode root = request(
+                TRACK_QUERY,
+                Map.of(
+                        "carrierId",
+                        query.carrier().trackerId(),
+                        "trackingNumber",
+                        query.waybill().value()));
+        TrackingResult result = root == null ? unknown() : parse(root);
+        recent.entrySet().removeIf(entry -> !now.isBefore(entry.getValue().expiresAt()));
+        if (recent.size() >= 1000) recent.remove(recent.keySet().iterator().next());
+        recent.put(key, new Cached(result, now.plusSeconds(60)));
+        return result;
+    }
+
+    private JsonNode request(String query, Map<String, String> variables) {
+        if (!isConfigured()) {
+            failure("MISSING_CREDENTIALS");
+            return null;
+        }
+        Instant now = clock.instant();
+        if (now.isBefore(nextRequestAt)) {
+            failure("RATE_LIMITED");
+            return null;
+        }
+        if (!now.isBefore(requestWindow.plusSeconds(60))) {
+            requestWindow = now;
+            requestCount = 0;
+        }
+        if (requestCount >= 100) {
+            failure("RATE_LIMITED");
+            return null;
+        }
+        requestCount++;
         try {
-            String body = objectMapper.writeValueAsString(Map.of(
-                    "query",
-                    TRACK_QUERY,
-                    "variables",
-                    Map.of(
-                            "carrierId", query.carrier().trackerId(),
-                            "trackingNumber", query.waybill().value())));
+            String body = objectMapper.writeValueAsString(Map.of("query", query, "variables", variables));
             HttpRequest request = HttpRequest.newBuilder(endpoint)
                     .timeout(timeout)
                     .header("Content-Type", "application/json")
@@ -101,29 +190,71 @@ public class DeliveryTrackerApiAdapter implements DeliveryTrackerPort {
                     .build();
             HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
             if (response.statusCode() < 200 || response.statusCode() >= 300) {
-                log.warn("Delivery Tracker 응답 오류 status={}", response.statusCode());
-                return new TrackingResult(DeliveryStatus.UNKNOWN, null);
+                failure(
+                        response.statusCode() == 401 || response.statusCode() == 403
+                                ? "AUTHENTICATION_FAILED"
+                                : response.statusCode() == 429 ? "PROVIDER_RATE_LIMITED" : "PROVIDER_UNAVAILABLE");
+                nextRequestAt = now.plusSeconds(60);
+                return null;
             }
-            return parse(response.body());
+            JsonNode root = objectMapper.readTree(response.body());
+            if (root == null || !root.isObject()) {
+                failure("INVALID_RESPONSE");
+                return null;
+            }
+            JsonNode errors = root.path("errors");
+            if (!errors.isMissingNode() && !errors.isNull() && (!errors.isArray() || !errors.isEmpty())) {
+                failure("GRAPHQL_ERROR");
+                nextRequestAt = now.plusSeconds(60);
+                return null;
+            }
+            return root;
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            return new TrackingResult(DeliveryStatus.UNKNOWN, null);
+            failure("INTERRUPTED");
+        } catch (java.net.http.HttpTimeoutException e) {
+            failure("TIMEOUT");
         } catch (Exception e) {
-            log.warn("Delivery Tracker 조회 실패 carrier={} : {}", query.carrier().trackerId(), e.getMessage());
-            return new TrackingResult(DeliveryStatus.UNKNOWN, null);
+            // Never log provider bodies, exception messages, credentials or waybill numbers.
+            failure("PROVIDER_UNAVAILABLE");
         }
+        return null;
     }
 
-    private TrackingResult parse(String body) {
-        JsonNode root = objectMapper.readTree(body);
-        JsonNode lastEvent = root.path("data").path("track").path("lastEvent");
-        if (lastEvent.isMissingNode() || lastEvent.isNull()) {
-            // 등록 직후에는 트래커에 이벤트가 없을 수 있다 — 미접수로 본다.
+    private TrackingResult parse(JsonNode root) {
+        JsonNode track = root.path("data").path("track");
+        if (!track.isObject() || !track.has("lastEvent")) {
+            failure("TRACK_NOT_FOUND");
+            return unknown();
+        }
+        JsonNode event = track.path("lastEvent");
+        if (event.isNull()) {
+            success();
             return new TrackingResult(DeliveryStatus.PENDING, null);
         }
-        String code = lastEvent.path("status").path("code").asString("");
-        String name = lastEvent.path("status").path("name").asString(null);
+        String code = event.path("status").path("code").asString("");
         DeliveryStatus status = STATUS_MAP.getOrDefault(code, DeliveryStatus.UNKNOWN);
+        if (status == DeliveryStatus.UNKNOWN) {
+            failure("UNKNOWN_STATUS");
+            return unknown();
+        }
+        success();
+        String name = event.path("status").path("name").asString(null);
         return new TrackingResult(status, name == null || name.isBlank() ? code : name);
+    }
+
+    private void success() {
+        connected = true;
+        lastSuccessAt = clock.instant();
+    }
+
+    private void failure(String code) {
+        connected = false;
+        lastFailureAt = clock.instant();
+        lastFailure = code;
+    }
+
+    private TrackingResult unknown() {
+        return new TrackingResult(DeliveryStatus.UNKNOWN, null);
     }
 }

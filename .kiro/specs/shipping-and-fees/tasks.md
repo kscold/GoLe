@@ -116,3 +116,11 @@
 - 로컬 함정: 호스트에 brew Redis가 127.0.0.1:6379를 선점하고 있으면 앱은 그쪽에 붙는다.
   `scripts/seed-e2e-accounts.sh`는 Docker Redis에 세션을 심으므로 세션이 "없는 것처럼"
   보인다(INVALID_SESSION). 호스트 redis-cli로 같은 키를 넣거나 brew Redis를 내리면 된다.
+
+## 2026-09-08 OWNER C 후속
+
+- [x] 기존 실 어댑터 GraphQL 오류/HTTP 오류/UNKNOWN 구분, 고정 endpoint/timeout/호출 예산/동시조회 캐시 보강.
+- [x] 관리자 `/admin/integrations/tracker` 준비상태·연결 검증·샘플 조회·기존 주문 안전 재조회 API/UI. 안전 재조회는 배송 저장 및 알림을 일으키지 않는다.
+- [x] ADMIN validation/감사 저장·마스킹, 자격증명 미설정 시 스텁 미호출. 배송 영역 테스트 45건 통과, 웹 타입/린트/FSD 및 Orca 별도 탭 모킹 검증.
+- [ ] F1/F4 실제 자격증명 주입 및 실 송장 E2E는 여전히 미완료. 서버 재시작/실제 요청 없음.
+- 세부 계약·검증 한계·공통 소유자 후속: `../admin-tracker/implementation.md`.

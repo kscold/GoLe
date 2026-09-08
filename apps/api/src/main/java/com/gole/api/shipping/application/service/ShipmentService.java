@@ -112,7 +112,7 @@ public class ShipmentService implements RegisterWaybillUseCase, TrackShipmentUse
     }
 
     @Override
-    public Shipment track(String orderId) {
+    public synchronized Shipment track(String orderId) {
         Shipment shipment = shipments.findByOrderId(orderId).orElseThrow(() -> new ShipmentNotFoundException(orderId));
         if (shipment.getStatus() == DeliveryStatus.DELIVERED) {
             return shipment; // 종결 상태 — 외부 조회 불필요
@@ -144,7 +144,9 @@ public class ShipmentService implements RegisterWaybillUseCase, TrackShipmentUse
         }
         TrackingResult result = tracker.track(
                 new TrackingQuery(shipment.getCarrier(), shipment.getWaybill(), shipment.getRegisteredAt()));
-        Duration ttl = result.status() == DeliveryStatus.DELIVERED ? deliveredCacheTtl : activeCacheTtl;
+        Duration ttl = result.status() == DeliveryStatus.UNKNOWN
+                ? Duration.ofSeconds(60)
+                : result.status() == DeliveryStatus.DELIVERED ? deliveredCacheTtl : activeCacheTtl;
         trackerCache.put(shipment.getCarrier(), shipment.getWaybill(), result, ttl);
         return result;
     }

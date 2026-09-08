@@ -18,6 +18,22 @@ public interface DeliveryTrackerPort {
 
     TrackingResult track(TrackingQuery query);
 
+    default Diagnostics diagnostics() {
+        return new Diagnostics(false, isConfigured(), false, null, null, null);
+    }
+
+    default Diagnostics verifyConnection() {
+        return diagnostics();
+    }
+
+    record Diagnostics(
+            boolean enabled,
+            boolean configured,
+            boolean connected,
+            Instant lastSuccessAt,
+            Instant lastFailureAt,
+            String lastFailure) {}
+
     /**
      * @param registeredAt 운송장 등록 시각. 스텁이 경과 시간 기반 시뮬레이션에 쓴다(R6.3).
      *                     실 어댑터는 무시한다.
