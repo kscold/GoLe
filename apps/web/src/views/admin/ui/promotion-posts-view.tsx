@@ -14,7 +14,17 @@ import {
 import { useSession } from "@entities/user";
 import { ReasonPrompt, useModerationAction } from "@features/admin-moderation";
 import { ApiError, uploadImages, type UploadedImage } from "@shared/api";
-import { Badge, Button, Card, Field, Heading, Select, Text, Textarea } from "@shared/ui";
+import {
+  Badge,
+  Button,
+  Card,
+  Field,
+  Heading,
+  MediaImage,
+  Select,
+  Text,
+  Textarea,
+} from "@shared/ui";
 import {
   PROMOTION_CHANNEL_LABEL,
   PROMOTION_POST_STATUS_LABEL,
@@ -106,7 +116,7 @@ export function AdminPromotionPostsView() {
       const { id } = await createAdminPromotionPost(token, {
         channel: "THREADS",
         caption: caption.trim(),
-        mediaUrls: images.map((image) => image.url),
+        mediaKeys: images.map((image) => image.key),
       });
       if (submitNow) {
         await submitAdminPromotionPost(token, id);
@@ -211,8 +221,7 @@ export function AdminPromotionPostsView() {
                 <ul className="flex flex-wrap gap-3">
                   {images.map((image, index) => (
                     <li key={image.key} className="relative">
-                      {/* eslint-disable-next-line @next/next/no-img-element */}
-                      <img
+                      <MediaImage
                         src={image.url}
                         alt={`첨부 이미지 ${index + 1}`}
                         className="h-24 w-24 rounded-lg border border-neutral-200/70 object-cover"
@@ -273,8 +282,7 @@ export function AdminPromotionPostsView() {
                   <ul className="mt-1.5 flex flex-wrap gap-1.5">
                     {p.mediaUrls.map((url, index) => (
                       <li key={url}>
-                        {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img
+                        <MediaImage
                           src={url}
                           alt={`${shortId(p.id)} 첨부 이미지 ${index + 1}`}
                           className="h-12 w-12 rounded-md border border-neutral-200/70 object-cover"

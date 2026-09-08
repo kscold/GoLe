@@ -813,7 +813,9 @@ export interface AdminPromotionPost {
 export interface CreatePromotionPostInput {
   readonly channel: PromotionChannel;
   readonly caption: string;
-  readonly mediaUrls: readonly string[];
+  /** 업로드 스테이지 키 목록(예: `images/<uuid>.png`) — `POST /api/v1/media/images`의 응답 `key`를
+   *  그대로 담는다. 공개 URL이 아니다(promotion-review D8). */
+  readonly mediaKeys: readonly string[];
 }
 
 export function fetchAdminPromotionPosts(
