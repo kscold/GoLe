@@ -26,6 +26,18 @@ public class PortOneWebhookVerifier {
         if (verifier == null) {
             throw new BadRequestException("INVALID_PAYMENT_WEBHOOK", "유효하지 않은 결제 웹훅입니다.");
         }
+        // SDK의 verify는 Kotlin 비널 파라미터라 헤더가 하나라도 없으면 검증 예외가 아니라
+        // NullPointerException을 던진다. 그대로 두면 서명 없는 요청이 400이 아니라 500으로
+        // 끝나 PortOne이 재시도하고, 인증되지 않은 호출자도 장애 알림을 만들 수 있다.
+        // 헤더 누락은 서명 불일치와 같은 "유효하지 않은 웹훅"이므로 SDK 호출 전에 끊는다.
+        if (isBlank(messageId) || isBlank(signature) || isBlank(timestamp)) {
+            log.warn(
+                    "[PortOne webhook] signature headers missing: webhook-id={} webhook-signature={} webhook-timestamp={}",
+                    presence(messageId),
+                    presence(signature),
+                    presence(timestamp));
+            throw new BadRequestException("INVALID_PAYMENT_WEBHOOK", "유효하지 않은 결제 웹훅입니다.");
+        }
         try {
             verifier.verify(body, messageId, signature, timestamp);
         } catch (WebhookVerificationException | SerializationException ex) {
@@ -34,6 +46,15 @@ public class PortOneWebhookVerifier {
                     ex.getClass().getSimpleName());
             throw new BadRequestException("INVALID_PAYMENT_WEBHOOK", "유효하지 않은 결제 웹훅입니다.");
         }
+    }
+
+    private static boolean isBlank(String value) {
+        return value == null || value.isBlank();
+    }
+
+    /** 헤더 값 자체(서명)는 로그에 남기지 않고 유무만 남긴다. */
+    private static String presence(String value) {
+        return isBlank(value) ? "missing" : "present";
     }
 
     private static WebhookVerifier createVerifier(String webhookSecret) {

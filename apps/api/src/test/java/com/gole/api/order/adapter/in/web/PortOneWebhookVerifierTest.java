@@ -10,6 +10,8 @@ import java.util.Base64;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 
 class PortOneWebhookVerifierTest {
 
@@ -45,6 +47,41 @@ class PortOneWebhookVerifierTest {
                         BODY, messageId, signature(messageId, staleTimestamp, BODY), Long.toString(staleTimestamp)))
                 .isInstanceOf(BadRequestException.class)
                 .hasMessageContaining("유효하지 않은");
+    }
+
+    @ParameterizedTest(name = "missing {0}")
+    @ValueSource(strings = {"webhook-id", "webhook-signature", "webhook-timestamp"})
+    void rejectsMissingSignatureHeaderAsInvalidWebhookNotServerError(String missingHeader) throws Exception {
+        long timestamp = Instant.now().getEpochSecond();
+        String messageId = "message-3";
+        String signature = signature(messageId, timestamp, BODY);
+        PortOneWebhookVerifier verifier = new PortOneWebhookVerifier(ENCODED_SECRET);
+
+        for (String absent : new String[] {null, "", "  "}) {
+            String id = "webhook-id".equals(missingHeader) ? absent : messageId;
+            String sig = "webhook-signature".equals(missingHeader) ? absent : signature;
+            String ts = "webhook-timestamp".equals(missingHeader) ? absent : Long.toString(timestamp);
+
+            // SDK로 넘어가면 NullPointerException(500)이 된다. 그 전에 400 경계로 끝나야 한다.
+            assertThatThrownBy(() -> verifier.verify(BODY, id, sig, ts))
+                    .isInstanceOf(BadRequestException.class)
+                    .isNotInstanceOf(NullPointerException.class)
+                    .hasMessageContaining("유효하지 않은");
+        }
+    }
+
+    @Test
+    void missingHeaderGuardDoesNotWeakenValidPath() throws Exception {
+        // 헤더가 모두 있으면 가드를 통과해 실제 서명 검증까지 간다 — 올바른 서명은 통과, 틀린 서명은 거절.
+        long timestamp = Instant.now().getEpochSecond();
+        String messageId = "message-4";
+        PortOneWebhookVerifier verifier = new PortOneWebhookVerifier(ENCODED_SECRET);
+
+        assertThatCode(() -> verifier.verify(
+                        BODY, messageId, signature(messageId, timestamp, BODY), Long.toString(timestamp)))
+                .doesNotThrowAnyException();
+        assertThatThrownBy(() -> verifier.verify(BODY, messageId, "v1,bm90LWEtc2lnbmF0dXJl", Long.toString(timestamp)))
+                .isInstanceOf(BadRequestException.class);
     }
 
     @Test
