@@ -10,6 +10,7 @@ import com.gole.api.order.application.port.out.PaymentReviewRequiredException;
 import com.gole.api.order.domain.model.PaymentEvidenceKind;
 import com.gole.api.order.domain.model.PaymentMethod;
 import com.gole.api.order.domain.model.PaymentMethodType;
+import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -22,6 +23,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.HttpClientErrorException;
 import org.springframework.web.client.RestClient;
@@ -35,6 +37,11 @@ import org.springframework.web.client.RestClient;
  *
  * <p>활성화: {@code portone.enabled=true} + API secret·상점·채널 설정 필요.
  * 미설정 시 {@link StubPaymentGatewayAdapter}가 사용된다.
+ *
+ * <p>모든 PortOne 호출에는 연결·읽기 타임아웃이 걸린다. 기본 {@code RestClient}는 무한 대기라
+ * PortOne이 응답을 끊지 않고 멈추면 결제 확인 요청과 웹훅 스레드가 영원히 묶이고, 웹훅은
+ * PortOne 쪽 타임아웃으로 실패 처리돼 재시도가 또 같은 스레드를 잡는다. 타임아웃은
+ * {@link PaymentGatewayUnavailableException}으로 끝나므로 호출측은 재시도 가능한 장애로 본다.
  */
 @Component
 @ConditionalOnProperty(name = "portone.enabled", havingValue = "true")
@@ -55,9 +62,15 @@ public class PortOnePaymentGatewayAdapter implements PaymentGatewayPort {
             @Value("${portone.channel-key}") String expectedChannelKey,
             @Value("${portone.card-channel-key:}") String cardChannelKey,
             @Value("${portone.channel-type:TEST}") String expectedChannelType,
+            @Value("${portone.connect-timeout:PT3S}") Duration connectTimeout,
+            @Value("${portone.read-timeout:PT10S}") Duration readTimeout,
             OperationalEventPublisher operationalEvents) {
+        SimpleClientHttpRequestFactory requestFactory = new SimpleClientHttpRequestFactory();
+        requestFactory.setConnectTimeout(requirePositive("portone.connect-timeout", connectTimeout));
+        requestFactory.setReadTimeout(requirePositive("portone.read-timeout", readTimeout));
         this.client = RestClient.builder()
                 .baseUrl(apiBase)
+                .requestFactory(requestFactory)
                 .defaultHeader("Authorization", "PortOne " + apiSecret)
                 .build();
         this.expectedStoreId = expectedStoreId.trim();
@@ -87,6 +100,13 @@ public class PortOnePaymentGatewayAdapter implements PaymentGatewayPort {
             channels.add(new AllowedChannel(cardChannelKey.trim(), PaymentMethodType.CARD, null, "카드"));
         }
         return List.copyOf(channels);
+    }
+
+    private static Duration requirePositive(String property, Duration value) {
+        if (value == null || value.isZero() || value.isNegative()) {
+            throw new IllegalStateException(property + " must be a positive duration");
+        }
+        return value;
     }
 
     @Override
