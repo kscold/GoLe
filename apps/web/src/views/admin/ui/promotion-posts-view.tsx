@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { type ChangeEvent, useCallback, useEffect, useState } from "react";
 import {
   approveAdminPromotionPost,
   createAdminPromotionPost,
@@ -13,8 +13,8 @@ import {
 } from "@entities/admin";
 import { useSession } from "@entities/user";
 import { ReasonPrompt, useModerationAction } from "@features/admin-moderation";
-import { ApiError } from "@shared/api";
-import { Badge, Button, Card, Heading, Select, Text, Textarea } from "@shared/ui";
+import { ApiError, uploadImages, type UploadedImage } from "@shared/api";
+import { Badge, Button, Card, Field, Heading, Select, Text, Textarea } from "@shared/ui";
 import {
   PROMOTION_CHANNEL_LABEL,
   PROMOTION_POST_STATUS_LABEL,
@@ -27,6 +27,8 @@ import { AdminStatus, AdminTable } from "./table";
 type StatusFilter = "ALL" | PromotionPostStatus;
 
 const CAPTION_MAX_LENGTH = 500;
+/** 백엔드 `PromotionPost.MAX_MEDIA_COUNT`, `MediaController.MAX_BATCH_SIZE`와 맞춘다. (T3) */
+const MAX_MEDIA_COUNT = 10;
 
 /**
  * 홍보 게시 검토 — Threads 등 외부 채널 업로드 전 다른 관리자의 승인을 강제한다.
@@ -45,6 +47,8 @@ export function AdminPromotionPostsView() {
   const [error, setError] = useState<string | undefined>(undefined);
 
   const [caption, setCaption] = useState("");
+  const [images, setImages] = useState<readonly UploadedImage[]>([]);
+  const [uploading, setUploading] = useState(false);
   const [creating, setCreating] = useState(false);
   const [createError, setCreateError] = useState<string | undefined>(undefined);
 
@@ -65,6 +69,33 @@ export function AdminPromotionPostsView() {
   useEffect(load, [load]);
   const reviewAction = useModerationAction(load);
 
+  async function handleFileChange(event: ChangeEvent<HTMLInputElement>) {
+    const selected = Array.from(event.target.files ?? []);
+    if (selected.length === 0) {
+      return;
+    }
+    setCreateError(undefined);
+    const remaining = MAX_MEDIA_COUNT - images.length;
+    if (remaining <= 0) {
+      setCreateError(`이미지는 최대 ${MAX_MEDIA_COUNT}장까지 첨부할 수 있어요.`);
+      return;
+    }
+    setUploading(true);
+    try {
+      const uploaded = await uploadImages(selected.slice(0, remaining));
+      setImages((prev) => [...prev, ...uploaded]);
+    } catch (cause) {
+      setCreateError(cause instanceof ApiError ? cause.message : "이미지 업로드에 실패했습니다.");
+    } finally {
+      setUploading(false);
+      event.target.value = "";
+    }
+  }
+
+  function removeImage(key: string) {
+    setImages((prev) => prev.filter((image) => image.key !== key));
+  }
+
   async function handleCreate(submitNow: boolean) {
     if (token === null || caption.trim().length === 0) {
       return;
@@ -75,12 +106,13 @@ export function AdminPromotionPostsView() {
       const { id } = await createAdminPromotionPost(token, {
         channel: "THREADS",
         caption: caption.trim(),
-        mediaUrls: [],
+        mediaUrls: images.map((image) => image.url),
       });
       if (submitNow) {
         await submitAdminPromotionPost(token, id);
       }
       setCaption("");
+      setImages([]);
       load();
     } catch (cause) {
       setCreateError(cause instanceof ApiError ? cause.message : "홍보 게시 등록에 실패했습니다.");
@@ -158,17 +190,59 @@ export function AdminPromotionPostsView() {
             {caption.length}/{CAPTION_MAX_LENGTH}자
           </span>
         </label>
+        <Field
+          label="이미지 (선택)"
+          hint={`최대 ${MAX_MEDIA_COUNT}장 · JPEG/PNG 정지 이미지만 가능하며 위치정보 등 메타데이터는 제거됩니다.`}
+        >
+          {({ inputId, describedBy }) => (
+            <div className="flex flex-col gap-3">
+              <input
+                id={inputId}
+                type="file"
+                accept="image/jpeg,image/png"
+                multiple
+                aria-describedby={describedBy}
+                onChange={(e) => void handleFileChange(e)}
+                disabled={uploading || creating || images.length >= MAX_MEDIA_COUNT}
+                className="text-sm text-neutral-700 file:mr-3 file:rounded-md file:border file:border-neutral-200 file:bg-neutral-50 file:px-3 file:py-1.5 file:text-sm"
+              />
+              {uploading ? <p className="text-sm text-neutral-500">업로드 중...</p> : null}
+              {images.length > 0 ? (
+                <ul className="flex flex-wrap gap-3">
+                  {images.map((image, index) => (
+                    <li key={image.key} className="relative">
+                      {/* eslint-disable-next-line @next/next/no-img-element */}
+                      <img
+                        src={image.url}
+                        alt={`첨부 이미지 ${index + 1}`}
+                        className="h-24 w-24 rounded-lg border border-neutral-200/70 object-cover"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeImage(image.key)}
+                        aria-label={`첨부 이미지 ${index + 1} 삭제`}
+                        className="absolute -right-2 -top-2 flex h-6 w-6 items-center justify-center rounded-full bg-neutral-900/80 text-sm text-white"
+                      >
+                        ×
+                      </button>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          )}
+        </Field>
         {createError !== undefined ? <p className="text-sm text-danger">{createError}</p> : null}
         <div className="flex justify-end gap-2">
           <Button
             variant="secondary"
-            disabled={creating || caption.trim().length === 0}
+            disabled={creating || uploading || caption.trim().length === 0}
             onClick={() => void handleCreate(false)}
           >
             초안 저장
           </Button>
           <Button
-            disabled={creating || caption.trim().length === 0}
+            disabled={creating || uploading || caption.trim().length === 0}
             onClick={() => void handleCreate(true)}
           >
             저장 후 검토 요청
@@ -195,6 +269,20 @@ export function AdminPromotionPostsView() {
               </td>
               <td className="max-w-[320px] px-3 py-2.5 text-neutral-600">
                 <p className="line-clamp-2 whitespace-pre-wrap break-words">{p.caption}</p>
+                {p.mediaUrls.length > 0 ? (
+                  <ul className="mt-1.5 flex flex-wrap gap-1.5">
+                    {p.mediaUrls.map((url, index) => (
+                      <li key={url}>
+                        {/* eslint-disable-next-line @next/next/no-img-element */}
+                        <img
+                          src={url}
+                          alt={`${shortId(p.id)} 첨부 이미지 ${index + 1}`}
+                          className="h-12 w-12 rounded-md border border-neutral-200/70 object-cover"
+                        />
+                      </li>
+                    ))}
+                  </ul>
+                ) : null}
                 {p.rejectionReason !== null ? (
                   <p className="mt-1 text-xs text-danger">반려 사유: {p.rejectionReason}</p>
                 ) : null}
