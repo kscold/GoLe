@@ -13,6 +13,7 @@ import java.util.Objects;
 public final class PromotionPost {
 
     private static final int MAX_CAPTION_LENGTH = 500;
+    private static final int MAX_MEDIA_COUNT = 10;
 
     private final String id;
     private final PromotionChannel channel;
@@ -45,7 +46,7 @@ public final class PromotionPost {
         this.id = Objects.requireNonNull(id, "id");
         this.channel = Objects.requireNonNull(channel, "channel");
         this.caption = requireCaption(caption);
-        this.mediaUrls = mediaUrls == null ? List.of() : List.copyOf(mediaUrls);
+        this.mediaUrls = requireMediaUrls(mediaUrls);
         this.authorId = requireText(authorId, "authorId");
         this.status = Objects.requireNonNull(status, "status");
         this.createdAt = Objects.requireNonNull(createdAt, "createdAt");
@@ -128,6 +129,24 @@ public final class PromotionPost {
             throw new IllegalArgumentException("caption must be at most " + MAX_CAPTION_LENGTH + " chars");
         }
         return text;
+    }
+
+    /** 미디어 URL은 선택이지만, 넣었다면 빈 문자열이 섞이지 않아야 하고 개수 상한을 지켜야 한다.
+     *  (T3 — 이미지 첨부. 발행 미리보기용이며 개수 제한은 {@code MediaController}의 배치 업로드
+     *  상한과 맞춘다.) */
+    private static List<String> requireMediaUrls(List<String> mediaUrls) {
+        if (mediaUrls == null || mediaUrls.isEmpty()) {
+            return List.of();
+        }
+        if (mediaUrls.size() > MAX_MEDIA_COUNT) {
+            throw new IllegalArgumentException("mediaUrls must have at most " + MAX_MEDIA_COUNT + " items");
+        }
+        for (String url : mediaUrls) {
+            if (url == null || url.isBlank()) {
+                throw new IllegalArgumentException("mediaUrls must not contain blank entries");
+            }
+        }
+        return List.copyOf(mediaUrls);
     }
 
     private static String requireText(String value, String name) {

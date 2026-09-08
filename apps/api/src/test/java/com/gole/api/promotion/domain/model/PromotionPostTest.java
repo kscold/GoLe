@@ -33,6 +33,32 @@ class PromotionPostTest {
     }
 
     @Test
+    void acceptsUpToTenMediaUrls() {
+        List<String> tenUrls = List.of("u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9", "u10");
+        PromotionPost post =
+                PromotionPost.draft("promo-1", PromotionChannel.THREADS, "캡션", tenUrls, "author-1", NOW);
+
+        assertThat(post.getMediaUrls()).hasSize(10);
+    }
+
+    @Test
+    void rejectsMoreThanTenMediaUrls() {
+        List<String> elevenUrls =
+                List.of("u1", "u2", "u3", "u4", "u5", "u6", "u7", "u8", "u9", "u10", "u11");
+
+        assertThatThrownBy(() -> PromotionPost.draft(
+                        "promo-1", PromotionChannel.THREADS, "캡션", elevenUrls, "author-1", NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
+    void rejectsBlankMediaUrlEntries() {
+        assertThatThrownBy(() -> PromotionPost.draft(
+                        "promo-1", PromotionChannel.THREADS, "캡션", List.of(" "), "author-1", NOW))
+                .isInstanceOf(IllegalArgumentException.class);
+    }
+
+    @Test
     void happyPathTransitionsThroughAllStates() {
         PromotionPost post = draft();
 

@@ -121,7 +121,9 @@ public class AdminPromotionPostController {
     }
 
     public record CreatePromotionPostRequest(
-            @NotNull PromotionChannel channel, @NotBlank @Size(max = 500) String caption, List<String> mediaUrls) {}
+            @NotNull PromotionChannel channel,
+            @NotBlank @Size(max = 500) String caption,
+            @Size(max = 10) List<String> mediaUrls) {}
 
     public record RejectPromotionPostRequest(@NotBlank @Size(max = 1000) String reason) {}
 }
