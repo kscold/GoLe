@@ -73,21 +73,32 @@
 (`report` 접수와 동일한 취급) 감사 대상에서 뺀다 — `AdminActionType` 주석의 기존 원칙("상태를
 바꾸는 조치만 열거한다")을 그대로 따른다.
 
-### D8. 이미지 첨부는 `media` 컨텍스트 업로드 파이프라인을 그대로 재사용한다 (구 T3)
+### D8. 이미지 첨부는 `media` 컨텍스트 업로드·수명주기 파이프라인을 그대로 재사용한다 (구 T3)
 
-새 업로드 경로를 만들지 않는다. 관리자가 `POST /api/v1/media/images(/batch)`로 먼저 업로드해
-받은 `StoredImage.url`을 그대로 `mediaUrls`에 담아 초안을 생성한다 — 컨텍스트 간 연동 규약(다른
-컨텍스트의 인바운드 포트만 의존)에 맞춰, `promotion`은 `media`의 리포지토리·어댑터를 몰라도
-되고 프런트 REST 호출 한 번으로 끝난다. 개수 상한(`MAX_MEDIA_COUNT = 10`)은 `MediaController`의
-배치 업로드 상한과 맞춰, 한 번의 배치 업로드 결과를 그대로 다 첨부할 수 있게 한다. 저장하는
-값은 `key`가 아니라 `url`이다 — 커뮤니티 게시글(`imageKeys`)과 달리 리뷰 화면에서 바로
-`<img src>`로 띄워야 하고, 나중에 실제 Threads Graph API로 보낼 때도 공개 URL이 필요하기
-때문이다(T1 연동 시 재검토 필요 — Threads가 이 URL에 외부에서 접근 가능해야 함).
+새 업로드 경로는 만들지 않는다. 관리자가 `POST /api/v1/media/images(/batch)`로 먼저 업로드하면
+`STAGED`(업로더 본인만 조회 가능, 기본 24시간 뒤 자동 폐기·삭제) 상태의 자산이 생긴다. 그
+응답의 `key`(URL이 아니다)를 초안 등록 요청(`mediaKeys`)에 담아 보내면, `PromotionPostService`가
+`media`의 인바운드 포트 `ManageMediaAssetsUseCase.replaceReferences(authorId,
+PROMOTION_POST, id, mediaKeys, true)`를 호출해 `PUBLIC`으로 전이시키고 이 게시물에 연결한다 —
+`ListingService`/`CommunityService`가 사진을 첨부할 때 쓰는 것과 동일한 패턴이다. 이 연결을
+빠뜨리면 검토자(작성자 아닌 다른 관리자)가 큐에서 이미지를 못 보고, 승인·발행 이후에도 24시간
+뒤 원본이 지워진다 — 실제로 첫 구현에서 이 연결을 빠뜨렸다가 리뷰 중 발견해 바로잡았다.
+
+`PromotionPost.mediaUrls`에는 `key`가 아니라 `MediaKey.publicPath(key)`로 만든 same-origin 공개
+경로(`/api/v1/media/<key>`)를 저장한다 — 리뷰 화면에서 프런트 `MediaImage` 컴포넌트가 이 상대
+경로에 API 베이스 URL을 붙여 바로 렌더링한다. 개수 상한(`MAX_MEDIA_COUNT = 10`)은
+`MediaController`의 배치 업로드 상한과 맞춰, 한 번의 배치 업로드 결과를 그대로 다 첨부할 수
+있게 한다.
+
+> T1(실제 Threads Graph API) 연동 시 재검토 필요: 이 공개 경로는 same-origin API를 통해서만
+> 접근 가능하다 — Threads 서버가 외부에서 직접 fetch할 수 있는 URL이 아니므로, 실제 발행
+> 어댑터를 붙일 때는 별도 공개 CDN URL을 노출하거나 이미지를 직접 업로드하는 방식으로
+> 바꿔야 한다.
 
 ## 요구사항 (EARS)
 
-- P1 WHEN 관리자가 채널·캡션(500자 이하)·미디어 URL(선택)로 초안을 등록하면, 시스템은
-  `DRAFT` 상태로 저장하고 작성자를 요청한 관리자로 고정해야 한다.
+- P1 WHEN 관리자가 채널·캡션(500자 이하)·미디어 업로드 키(선택, `mediaKeys`)로 초안을 등록하면,
+  시스템은 `DRAFT` 상태로 저장하고 작성자를 요청한 관리자로 고정해야 한다.
 - P2 WHEN 작성자가 `DRAFT` 상태의 초안을 검토 요청하면, 시스템은 `PENDING_REVIEW`로 전이하고
   제출 시각을 기록해야 한다. `DRAFT`가 아닌 상태에서의 제출은 거부해야 한다.
 - P3 WHEN 관리자가 `PENDING_REVIEW` 큐를 조회하면, 시스템은 대기 중인 게시물을 최신순으로
@@ -102,8 +113,9 @@
   발행은 거부해야 한다.
 - P8 승인·반려·발행 조치는 감사 로그(`RecordAdminActionUseCase`)에 남아야 한다.
 - P9 `PENDING_REVIEW`가 아닌 게시물에 대한 승인·반려 시도는 거부해야 한다(상태 전이 규칙 위반).
-- P10 WHEN 초안에 `mediaUrls`를 담아 등록하면, 시스템은 10개 초과이거나 빈 문자열이 섞인 경우
-  거부해야 한다. 검토 큐·상세에서는 첨부한 이미지를 그대로 노출해야 한다(D8).
+- P10 WHEN 초안에 `mediaKeys`를 담아 등록하면, 시스템은 10개 초과이거나 빈 문자열이 섞인 경우
+  거부해야 하고, 그 외에는 각 키를 `PUBLIC`으로 전이·연결한 뒤 공개 경로를 `mediaUrls`에
+  저장해야 한다. 검토 큐·상세에서는 첨부한 이미지를 그대로 노출해야 한다(D8).
 
 ## 설계
 
@@ -118,7 +130,9 @@
     `SubmitReportUseCase`/`ManageReportsUseCase` 분리를 그대로 따른다.
   - `application.port.out`: `PromotionPostRepositoryPort`, `PromotionPostIdGeneratorPort`,
     `SocialPublishPort`.
-  - `application.service.PromotionPostService`가 위 in-port 3개를 모두 구현.
+  - `application.service.PromotionPostService`가 위 in-port 3개를 모두 구현. `create()`는
+    `media` 컨텍스트의 인바운드 포트 `ManageMediaAssetsUseCase`도 의존해 `mediaKeys`를
+    `PROMOTION_POST` 타깃으로 붙인다(D8).
   - `adapter.out.persistence`: `PromotionPostDocument`/`PromotionPostMongoRepository`/
     `PromotionPostPersistenceAdapter` (컬렉션 `promotion_posts`).
   - `adapter.out.id.PromotionPostIdGenerator`(UUID, `ReportIdGenerator`와 동일 패턴).
@@ -170,3 +184,5 @@
 
 - `admin-console` — 감사 로그(`RecordAdminActionUseCase`), 관리자 권한 경계, `AdminAuthInterceptor`.
 - `report` — `SubmitReportUseCase`/`ManageReportsUseCase` 분리 패턴을 그대로 차용.
+- `media` — 업로드·`STAGED`→`PUBLIC` 전이(`ManageMediaAssetsUseCase.replaceReferences`)를
+  `listing`/`community`와 동일한 방식으로 재사용(D8).
