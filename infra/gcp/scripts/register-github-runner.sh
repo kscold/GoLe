@@ -81,7 +81,22 @@ if [ "$DEPLOY_USER" != "goledeploy" ] ||
 fi
 
 ensure_runner_service() {
-  local unit_candidate
+  local unit_candidate credential
+  # GitHub's archive ships bin/runsvc.sh; svc.sh normally copies it when
+  # installing a service. Our custom least-privilege unit needs the same step.
+  if [ ! -e "$RUNNER_ROOT/runsvc.sh" ] && [ ! -L "$RUNNER_ROOT/runsvc.sh" ]; then
+    [ -f "$RUNNER_ROOT/bin/runsvc.sh" ] && [ ! -L "$RUNNER_ROOT/bin/runsvc.sh" ] ||
+      die "packaged runner service command is missing or invalid"
+    runuser -u "$DEPLOY_USER" -- install -m 0755 \
+      "$RUNNER_ROOT/bin/runsvc.sh" "$RUNNER_ROOT/runsvc.sh"
+  fi
+  for credential in .credentials .credentials_rsaparams; do
+    if [ -e "$RUNNER_ROOT/$credential" ] || [ -L "$RUNNER_ROOT/$credential" ]; then
+      [ -f "$RUNNER_ROOT/$credential" ] && [ ! -L "$RUNNER_ROOT/$credential" ] ||
+        die "runner credential file is invalid"
+      runuser -u "$DEPLOY_USER" -- chmod 0600 "$RUNNER_ROOT/$credential"
+    fi
+  done
   if [ ! -f "$RUNNER_ROOT/runsvc.sh" ] || [ -L "$RUNNER_ROOT/runsvc.sh" ] ||
     [ ! -x "$RUNNER_ROOT/runsvc.sh" ]; then
     die "runner service command is missing or invalid"
