@@ -169,8 +169,10 @@ gole:
     # 로컬은 기존 전화 인증 흐름을 계속 검증한다. 알림톡이 준비되지 않은 초기 공개 운영은
     # false로 내려 신규 사용자가 발송 불가능한 OTP 단계에서 막히지 않게 한다.
     phone-verification-required: ${GOLE_ONBOARDING_PHONE_REQUIRED:true}
-    # OTP 원문 로그는 로컬 계열 환경에서도 기본 차단한다. 수동 흐름 확인에 꼭 필요할 때만
-    # 명시적으로 켜며 staging/production에서는 true여도 로깅 어댑터가 요청을 거부한다.
+    # OTP 원문 노출 스위치. 켜면 로그에 코드를 남기는 동시에 Redis에도 해시 대신 평문으로
+    # 저장해, 실제 알림톡이 없는 개발 환경에서 코드를 꺼내 흐름을 밟아볼 수 있게 한다.
+    # 로컬 계열 환경에서도 기본 차단이며, staging/production에서는 true로 넣어도
+    # PhoneVerificationCodeExposurePolicy가 환경을 함께 보고 무시한다.
     log-verification-codes: ${GOLE_ONBOARDING_LOG_VERIFICATION_CODES:false}
     # 전화번호 인증코드 알림톡 템플릿. 카카오 승인은 코드 밖 운영 과제라 기본값이 비어 있다.
     # coolsms.enabled=false(로컬·승인 전)면 로깅 스텁이 이 값과 무관하게 인증 흐름을

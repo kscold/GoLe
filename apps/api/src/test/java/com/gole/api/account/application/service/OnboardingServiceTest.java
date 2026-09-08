@@ -11,6 +11,7 @@ import com.gole.api.account.application.port.in.SubmitOnboardingConsentUseCase.S
 import com.gole.api.account.application.port.out.AccountRepositoryPort;
 import com.gole.api.account.application.port.out.PasswordHasherPort;
 import com.gole.api.account.application.port.out.PhoneVerificationStorePort;
+import com.gole.api.account.config.PhoneVerificationCodeExposurePolicy;
 import com.gole.api.account.domain.exception.PhoneVerificationUnavailableException;
 import com.gole.api.account.domain.exception.VerificationException;
 import com.gole.api.account.domain.model.Account;
@@ -67,8 +68,19 @@ class OnboardingServiceTest {
                 () -> "123456",
                 Optional.of(alimtalk),
                 passwordHasher,
+                hashedStorage(),
                 properties(),
                 clock);
+    }
+
+    /** 공개 환경과 같은 기본 정책 — OTP는 해시로만 저장된다. */
+    private static PhoneVerificationCodeExposurePolicy hashedStorage() {
+        return new PhoneVerificationCodeExposurePolicy("local", false);
+    }
+
+    /** 개발자가 코드를 직접 읽을 수 있게 옵트인한 로컬 정책. */
+    private static PhoneVerificationCodeExposurePolicy plaintextStorage() {
+        return new PhoneVerificationCodeExposurePolicy("local", true);
     }
 
     // --- R2: 재개용 상태 조회 ---
@@ -106,6 +118,7 @@ class OnboardingServiceTest {
                 () -> "123456",
                 Optional.of(alimtalk),
                 passwordHasher,
+                hashedStorage(),
                 phoneOptional,
                 clock);
 
@@ -166,11 +179,42 @@ class OnboardingServiceTest {
         // Redis 조회 권한만으로 인증을 가로챌 수 없어야 한다.
         service.request(new RequestPhoneVerificationCommand(ACCOUNT_ID, "01012345678"));
 
-        String storedCodeHash =
-                phoneVerifications.find(ACCOUNT_ID).orElseThrow().codeHash();
-        assertThat(storedCodeHash).isNotEqualTo("123456");
-        assertThat(passwordHasher.matches("123456", new PasswordHash(storedCodeHash)))
+        String storedCode = phoneVerifications.find(ACCOUNT_ID).orElseThrow().storedCode();
+        assertThat(storedCode).isNotEqualTo("123456");
+        assertThat(passwordHasher.matches("123456", new PasswordHash(storedCode)))
                 .isTrue();
+    }
+
+    @Test
+    void developerOptInStoresThePlaintextCodeSoLocalFlowsCanBeWalkedThrough() {
+        // 실제 알림톡이 없는 개발 환경에서는 저장된 코드를 꺼내 인증을 이어갈 수 있어야 한다.
+        OnboardingService devService = new OnboardingService(
+                accounts,
+                phoneVerifications,
+                () -> "123456",
+                Optional.of(alimtalk),
+                passwordHasher,
+                plaintextStorage(),
+                properties(),
+                clock);
+
+        devService.request(new RequestPhoneVerificationCommand(ACCOUNT_ID, "01012345678"));
+
+        assertThat(phoneVerifications.find(ACCOUNT_ID).orElseThrow().storedCode())
+                .isEqualTo("123456");
+        // 평문 경로에서도 확인 단계는 그대로 성공해야 한다.
+        devService.confirm(new ConfirmPhoneVerificationCommand(ACCOUNT_ID, "123456"));
+        assertThat(accounts.findById(ACCOUNT_ID).orElseThrow().getPhoneNumber())
+                .isEqualTo(new PhoneNumber("01012345678"));
+    }
+
+    @Test
+    void publicEnvironmentsIgnoreTheDeveloperOptIn() {
+        // 운영에 플래그가 잘못 들어가도 저장 방식이 바뀌면 안 된다 — 이것이 coolsms.enabled가
+        // 아니라 환경을 함께 보는 정책을 둔 이유다.
+        PhoneVerificationCodeExposurePolicy production = new PhoneVerificationCodeExposurePolicy("production", true);
+
+        assertThat(production.plaintextAllowed()).isFalse();
     }
 
     @Test
@@ -244,6 +288,7 @@ class OnboardingServiceTest {
                 () -> "123456",
                 Optional.of(alimtalk),
                 passwordHasher,
+                hashedStorage(),
                 unconfigured,
                 clock);
 
@@ -258,7 +303,14 @@ class OnboardingServiceTest {
     void absentAlimtalkAdapterFailsLoudly() {
         // coolsms.enabled=false면 발송 빈 자체가 없다. 부팅은 되어야 하지만 발송은 실패해야 한다.
         OnboardingService noSender = new OnboardingService(
-                accounts, phoneVerifications, () -> "123456", Optional.empty(), passwordHasher, properties(), clock);
+                accounts,
+                phoneVerifications,
+                () -> "123456",
+                Optional.empty(),
+                passwordHasher,
+                hashedStorage(),
+                properties(),
+                clock);
 
         assertThatThrownBy(() -> noSender.request(new RequestPhoneVerificationCommand(ACCOUNT_ID, "01012345678")))
                 .isInstanceOf(PhoneVerificationUnavailableException.class);

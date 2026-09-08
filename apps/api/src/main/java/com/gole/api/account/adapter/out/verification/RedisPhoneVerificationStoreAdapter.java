@@ -11,10 +11,11 @@ import org.springframework.stereotype.Component;
  * Redis 기반 전화번호 인증 코드 저장소. ({@code RedisOAuthStateStoreAdapter}의 TTL 패턴 재사용, onboarding D2)
  *
  * <ul>
- *   <li>{@code phone:otp:{accountId}} → {@code 번호\n코드해시\n오답횟수}, TTL 5분. 코드는 평문이 아니라
- *       {@code PasswordHasherPort}로 해싱한 값만 저장한다 — Redis 조회 권한만으로 인증을 가로채지
- *       못하게 한다. BCrypt 해시는 {@code $}, {@code .}, {@code /} 등을 포함할 수 있지만 개행 문자는
- *       절대 만들지 않으므로 이 구분자 포맷은 그대로 유효하다.
+ *   <li>{@code phone:otp:{accountId}} → {@code 번호\n저장코드\n오답횟수}, TTL 5분. 저장코드는 기본적으로
+ *       {@code PasswordHasherPort}로 해싱한 값이다 — Redis 조회 권한만으로 인증을 가로채지 못하게
+ *       한다. 개발 환경 옵트인({@code PhoneVerificationCodeExposurePolicy})에서만 평문이 들어오며,
+ *       어느 쪽이든 이 어댑터는 문자열로만 다룬다. BCrypt 해시는 {@code $}, {@code .}, {@code /} 등을
+ *       포함할 수 있지만 개행 문자는 절대 만들지 않으므로 이 구분자 포맷은 그대로 유효하다.
  *   <li>{@code phone:otp:cooldown:{accountId}} → 존재하면 재발송 거부, TTL 60초
  *   <li>{@code phone:otp:daily:{accountId}} → 발송 카운터, 최초 발송 기준 24시간
  * </ul>
@@ -94,6 +95,6 @@ public class RedisPhoneVerificationStoreAdapter implements PhoneVerificationStor
     }
 
     private static String serialize(PhoneVerificationChallenge challenge) {
-        return challenge.phoneNumber() + "\n" + challenge.codeHash() + "\n" + challenge.attempts();
+        return challenge.phoneNumber() + "\n" + challenge.storedCode() + "\n" + challenge.attempts();
     }
 }
