@@ -1,5 +1,8 @@
 package com.gole.api.promotion.application.service;
 
+import com.gole.api.media.application.port.in.ManageMediaAssetsUseCase;
+import com.gole.api.media.domain.model.MediaKey;
+import com.gole.api.media.domain.model.MediaTargetType;
 import com.gole.api.promotion.application.port.in.CreatePromotionPostUseCase;
 import com.gole.api.promotion.application.port.in.ManagePromotionPostsUseCase;
 import com.gole.api.promotion.application.port.in.SubmitPromotionPostForReviewUseCase;
@@ -26,28 +29,33 @@ public class PromotionPostService
     private final PromotionPostRepositoryPort repository;
     private final PromotionPostIdGeneratorPort idGenerator;
     private final SocialPublishPort publishPort;
+    private final ManageMediaAssetsUseCase mediaAssets;
     private final Clock clock;
 
     public PromotionPostService(
             PromotionPostRepositoryPort repository,
             PromotionPostIdGeneratorPort idGenerator,
             SocialPublishPort publishPort,
+            ManageMediaAssetsUseCase mediaAssets,
             Clock clock) {
         this.repository = repository;
         this.idGenerator = idGenerator;
         this.publishPort = publishPort;
+        this.mediaAssets = mediaAssets;
         this.clock = clock;
     }
 
     @Override
     public String create(CreatePromotionPostCommand command) {
+        String id = idGenerator.newId();
+        // media 컨텍스트의 인바운드 포트만 의존한다 — STAGED(업로더 전용, 24시간 뒤 폐기)를
+        // 이 게시물에 연결해 PUBLIC으로 전이시키지 않으면, 검토자가 첨부 이미지를 못 보고
+        // 하루 뒤 원본이 삭제된다(promotion-review D8).
+        mediaAssets.replaceReferences(
+                command.authorId(), MediaTargetType.PROMOTION_POST, id, command.mediaKeys(), true);
+        List<String> mediaUrls = command.mediaKeys().stream().map(MediaKey::publicPath).toList();
         PromotionPost draft = PromotionPost.draft(
-                idGenerator.newId(),
-                command.channel(),
-                command.caption(),
-                command.mediaUrls(),
-                command.authorId(),
-                Instant.now(clock));
+                id, command.channel(), command.caption(), mediaUrls, command.authorId(), Instant.now(clock));
         return repository.save(draft).getId();
     }
 

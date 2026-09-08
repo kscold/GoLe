@@ -8,6 +8,8 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.gole.api.media.application.port.in.ManageMediaAssetsUseCase;
+import com.gole.api.media.domain.model.MediaTargetType;
 import com.gole.api.promotion.application.port.in.CreatePromotionPostUseCase.CreatePromotionPostCommand;
 import com.gole.api.promotion.application.port.out.PromotionPostIdGeneratorPort;
 import com.gole.api.promotion.application.port.out.PromotionPostRepositoryPort;
@@ -31,8 +33,10 @@ class PromotionPostServiceTest {
     private final PromotionPostRepositoryPort repository = mock(PromotionPostRepositoryPort.class);
     private final PromotionPostIdGeneratorPort idGenerator = mock(PromotionPostIdGeneratorPort.class);
     private final SocialPublishPort publishPort = mock(SocialPublishPort.class);
+    private final ManageMediaAssetsUseCase mediaAssets = mock(ManageMediaAssetsUseCase.class);
     private final Clock clock = Clock.fixed(Instant.EPOCH, ZoneOffset.UTC);
-    private final PromotionPostService service = new PromotionPostService(repository, idGenerator, publishPort, clock);
+    private final PromotionPostService service =
+            new PromotionPostService(repository, idGenerator, publishPort, mediaAssets, clock);
 
     private PromotionPost saved(PromotionPostStatus status, String authorId) {
         PromotionPost post =
@@ -62,6 +66,22 @@ class PromotionPostServiceTest {
         verify(repository).save(captor.capture());
         assertThat(captor.getValue().getStatus()).isEqualTo(PromotionPostStatus.DRAFT);
         assertThat(captor.getValue().getAuthorId()).isEqualTo("author-1");
+    }
+
+    @Test
+    void createAttachesMediaKeysAndStoresPublicPaths() {
+        when(idGenerator.newId()).thenReturn("promo-1");
+        when(repository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        String key = "images/11111111-1111-4111-8111-111111111111.png";
+
+        String id = service.create(new CreatePromotionPostCommand(
+                "author-1", PromotionChannel.THREADS, "새 기능 나왔습니다", List.of(key)));
+
+        assertThat(id).isEqualTo("promo-1");
+        verify(mediaAssets).replaceReferences("author-1", MediaTargetType.PROMOTION_POST, "promo-1", List.of(key), true);
+        ArgumentCaptor<PromotionPost> captor = ArgumentCaptor.forClass(PromotionPost.class);
+        verify(repository).save(captor.capture());
+        assertThat(captor.getValue().getMediaUrls()).containsExactly("/api/v1/media/" + key);
     }
 
     @Test

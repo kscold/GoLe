@@ -64,7 +64,7 @@ public class AdminPromotionPostController {
     @ResponseStatus(HttpStatus.CREATED)
     public Map<String, String> create(@Valid @RequestBody CreatePromotionPostRequest request, HttpServletRequest http) {
         String id = createPromotionPost.create(new CreatePromotionPostCommand(
-                AdminActor.of(http).id(), request.channel(), request.caption(), request.mediaUrls()));
+                AdminActor.of(http).id(), request.channel(), request.caption(), request.mediaKeys()));
         return Map.of("id", id);
     }
 
@@ -120,10 +120,12 @@ public class AdminPromotionPostController {
                 actor.id(), actor.email(), type, AdminTargetType.PROMOTION_POST, promotionPostId, reason));
     }
 
+    /** @param mediaKeys 업로드 스테이지 키 목록(공개 URL 아님) — {@code POST /api/v1/media/images}로
+     *  먼저 올린 뒤 그 응답의 {@code key}를 그대로 담는다. */
     public record CreatePromotionPostRequest(
             @NotNull PromotionChannel channel,
             @NotBlank @Size(max = 500) String caption,
-            @Size(max = 10) List<String> mediaUrls) {}
+            @Size(max = 10) List<@NotBlank @Size(max = 80) String> mediaKeys) {}
 
     public record RejectPromotionPostRequest(@NotBlank @Size(max = 1000) String reason) {}
 }

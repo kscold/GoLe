@@ -10,6 +10,11 @@ public interface CreatePromotionPostUseCase {
 
     String create(CreatePromotionPostCommand command);
 
-    record CreatePromotionPostCommand(
-            String authorId, PromotionChannel channel, String caption, List<String> mediaUrls) {}
+    /** @param mediaKeys 업로드 스테이지 키(예: {@code images/<uuid>.png}) 목록 — 공개 URL이 아니다.
+     *  등록 시 {@code media} 컨텍스트로 PUBLIC 전이·연결한다(promotion-review D8). */
+    record CreatePromotionPostCommand(String authorId, PromotionChannel channel, String caption, List<String> mediaKeys) {
+        public CreatePromotionPostCommand {
+            mediaKeys = mediaKeys == null ? List.of() : mediaKeys;
+        }
+    }
 }
