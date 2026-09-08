@@ -37,6 +37,7 @@
 **구현보다 스펙이 먼저다.**
 
 - 전체 목록: [`.kiro/specs/`](../.kiro/specs/)
+- 현재 통합 기준: [관리자 고도화·브랜치 기획 정렬](../.kiro/specs/admin-alignment/spec.md)
 - 감사 기록: [2026-08-03 감사](../.kiro/specs/AUDIT-2026-08-03.md)
 
 스펙을 읽을 때는 `tasks.md`의 체크박스보다 **`requirements.md`의 "범위 밖"** 절을 먼저 본다.

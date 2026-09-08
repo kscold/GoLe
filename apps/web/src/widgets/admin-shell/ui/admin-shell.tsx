@@ -28,6 +28,9 @@ const NAV: readonly NavItem[] = [
   { href: "/admin/accounts", label: "회원" },
   { href: "/admin/account-deletions", label: "탈퇴 검토" },
   { href: "/admin/catalog", label: "카탈로그" },
+  { href: "/admin/design", label: "디자인 토큰" },
+  { href: "/admin/operations", label: "운영 자동화" },
+  { href: "/admin/integrations/tracker", label: "배송 연동" },
   { href: "/admin/audit", label: "감사 로그" },
 ];
 
