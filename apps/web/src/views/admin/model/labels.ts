@@ -56,6 +56,24 @@ export const ACCOUNT_STATUS_TONE: Readonly<Record<string, BadgeTone>> = {
   SUSPENDED: "danger",
 };
 
+export const PROMOTION_POST_STATUS_LABEL: Readonly<Record<string, string>> = {
+  DRAFT: "초안",
+  PENDING_REVIEW: "검토대기",
+  APPROVED: "승인됨",
+  PUBLISHED: "발행완료",
+};
+
+export const PROMOTION_POST_STATUS_TONE: Readonly<Record<string, BadgeTone>> = {
+  DRAFT: "neutral",
+  PENDING_REVIEW: "warning",
+  APPROVED: "brand",
+  PUBLISHED: "success",
+};
+
+export const PROMOTION_CHANNEL_LABEL: Readonly<Record<string, string>> = {
+  THREADS: "Threads",
+};
+
 export const COUNT_LABEL: Readonly<Record<string, string>> = {
   accounts: "회원",
   lego_sets: "카탈로그 세트",
@@ -83,6 +101,9 @@ export const AUDIT_TYPE_LABEL: Readonly<Record<string, string>> = {
   CATALOG_SET_FEATURE: "추천 토글",
   ORDER_PAYMENT_RECONCILE: "결제 재조정",
   SETTLEMENT_MARK_PAID: "정산 지급완료",
+  PROMOTION_POST_APPROVE: "홍보 게시 승인",
+  PROMOTION_POST_REJECT: "홍보 게시 반려",
+  PROMOTION_POST_PUBLISH: "홍보 게시 발행",
 };
 
 export const AUDIT_TYPE_TONE: Readonly<Record<string, BadgeTone>> = {
@@ -101,6 +122,9 @@ export const AUDIT_TYPE_TONE: Readonly<Record<string, BadgeTone>> = {
   CATALOG_SET_FEATURE: "brand",
   ORDER_PAYMENT_RECONCILE: "warning",
   SETTLEMENT_MARK_PAID: "success",
+  PROMOTION_POST_APPROVE: "success",
+  PROMOTION_POST_REJECT: "danger",
+  PROMOTION_POST_PUBLISH: "brand",
 };
 
 /** ISO 문자열을 목록에서 읽기 좋은 짧은 형식으로. */

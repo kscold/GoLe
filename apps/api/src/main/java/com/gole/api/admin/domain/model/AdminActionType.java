@@ -52,5 +52,11 @@ public enum AdminActionType {
     /** 서비스 공개 단계·기능 개방 변경. 서비스 전체를 열고 닫는 조치다. */
     LAUNCH_STAGE_CHANGE,
     /** 결제·정산 개방 전 사업·법무·실거래 준비 확인 또는 확인 취소. */
-    LAUNCH_READINESS_CHANGE
+    LAUNCH_READINESS_CHANGE,
+    /** 홍보 게시물 검토 승인(promotion-review D7). */
+    PROMOTION_POST_APPROVE,
+    /** 홍보 게시물 검토 반려(promotion-review D7). */
+    PROMOTION_POST_REJECT,
+    /** 홍보 게시물 외부 채널 발행(promotion-review D7). */
+    PROMOTION_POST_PUBLISH
 }

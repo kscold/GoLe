@@ -32,6 +32,10 @@ export type {
   AdminAuditEntry,
   CreateSetInput,
   UpdateSetInput,
+  PromotionChannel,
+  PromotionPostStatus,
+  AdminPromotionPost,
+  CreatePromotionPostInput,
 } from "./api/admin-api";
 export {
   fetchAdminOverview,
@@ -84,5 +88,11 @@ export {
   fetchAdminExceptionQueue,
   resolveAdminDispute,
   fetchAdminOrderContacts,
+  fetchAdminPromotionPosts,
+  createAdminPromotionPost,
+  submitAdminPromotionPost,
+  approveAdminPromotionPost,
+  rejectAdminPromotionPost,
+  publishAdminPromotionPost,
 } from "./api/admin-api";
 export type { AdminExceptionEntry, AdminShipmentFacts, AdminOrderContacts } from "./api/admin-api";
