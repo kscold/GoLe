@@ -36,7 +36,9 @@ async function mockProfileApis(page: Page): Promise<void> {
     route.fulfill({ json: { unreadCount: 0 } }),
   );
   await page.route("**/api/v1/accounts/me", (route) =>
-    route.fulfill({ json: { accountId: "acc-1", email: "seller@gole.test", role: "USER" } }),
+    route.fulfill({
+      json: { accountId: "acc-1", email: "seller@gole.test", role: "USER", nickname: "레고매니아" },
+    }),
   );
   // (main) 레이아웃의 OnboardingBanner도 같은 이유로 격리한다 — 목킹 안 하면 실제
   // 백엔드 401이 위 알림 폴링과 똑같이 전역 stale-session 정리를 먼저 실행시킨다.
@@ -133,13 +135,41 @@ test.describe("내 정보", () => {
     await mockProfileApis(page);
   });
 
-  test("빈 토큰 세션에서도 이메일이 로딩 상태에 멈추지 않고 채워진다", async ({ page }) => {
+  test("빈 토큰 세션에서도 내 정보가 로딩 상태에 멈추지 않고 채워진다", async ({ page }) => {
     await page.goto("/profile");
 
-    // UUID 조각이 아니라 이메일이 보여야 한다.
-    await expect(page.getByRole("heading", { name: "seller@gole.test" })).toBeVisible();
+    // UUID 조각이 아니라 사람이 알아보는 이름이 보여야 한다.
+    await expect(page.getByRole("heading", { name: "레고매니아" })).toBeVisible();
     await expect(page.getByText("불러오는 중")).toHaveCount(0);
     await expect(page.getByText("불러오지 못했어요")).toHaveCount(0);
+  });
+
+  // 온보딩에서 닉네임을 정하고도 프로필 어디에도 안 보이던 회귀를 막는다. /me가 닉네임을
+  // 아예 내려주지 않아 화면이 이메일을 제목으로 쓰고 있었다.
+  test("닉네임을 설정한 계정은 제목과 내 정보 항목에 닉네임을 보여준다", async ({ page }) => {
+    await page.goto("/profile");
+
+    await expect(page.getByRole("heading", { name: "레고매니아" })).toBeVisible();
+    // 이메일이 사라지면 안 된다 — 자기 계정을 식별하는 값이다.
+    await expect(page.getByText("seller@gole.test")).toBeVisible();
+    await expect(page.getByText("아직 설정하지 않았어요")).toHaveCount(0);
+  });
+
+  test("닉네임이 없으면 빈 줄 대신 설정하러 갈 링크를 준다", async ({ page }) => {
+    // 서버가 필드를 생략하는 경우(undefined)도 "아직 없음"으로 읽어야 한다.
+    await page.route("**/api/v1/accounts/me", (route) =>
+      route.fulfill({ json: { accountId: "acc-1", email: "seller@gole.test", role: "USER" } }),
+    );
+
+    await page.goto("/profile");
+
+    await expect(page.getByText("아직 설정하지 않았어요")).toBeVisible();
+    await expect(page.getByRole("link", { name: "닉네임 설정하기" })).toHaveAttribute(
+      "href",
+      "/onboarding",
+    );
+    // 닉네임이 없을 때는 이메일이 제목 자리를 대신한다.
+    await expect(page.getByRole("heading", { name: "seller@gole.test" })).toBeVisible();
   });
 
   test("내 매물 탭은 판매완료 매물까지 보여준다", async ({ page }) => {

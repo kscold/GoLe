@@ -49,12 +49,16 @@ public interface PhoneVerificationStorePort {
      * 발급된 인증 시도.
      *
      * @param phoneNumber 정규화된(숫자만) 번호. 확인 시점에 이 번호로 계정에 기록한다.
+     * @param storedCode 대조에 쓸 저장 형태. 기본은 {@code PasswordHasherPort}로 해싱한 단방향
+     *     값이라 Redis 조회 권한만으로는 인증을 가로챌 수 없다. {@code PhoneVerificationCodeExposurePolicy}가
+     *     허용한 개발 환경에서만 평문이 들어온다 — 그래서 이름이 {@code codeHash}가 아니다.
+     *     어느 형태인지는 저장한 쪽과 대조하는 쪽이 같은 정책을 보고 판단하며, 저장소는 모른다.
      * @param attempts 지금까지의 오답 횟수
      */
-    record PhoneVerificationChallenge(String phoneNumber, String code, int attempts) {
+    record PhoneVerificationChallenge(String phoneNumber, String storedCode, int attempts) {
 
         public PhoneVerificationChallenge withOneMoreAttempt() {
-            return new PhoneVerificationChallenge(phoneNumber, code, attempts + 1);
+            return new PhoneVerificationChallenge(phoneNumber, storedCode, attempts + 1);
         }
     }
 }

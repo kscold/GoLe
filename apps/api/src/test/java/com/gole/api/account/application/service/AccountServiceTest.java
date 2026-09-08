@@ -251,6 +251,22 @@ class AccountServiceTest {
                         .orElseThrow()
                         .onboardingRequired())
                 .isFalse();
+        // 온보딩에서 설정한 닉네임도 세션 해석에 함께 실린다 — /me가 계정을 다시 조회하지 않는다.
+        assertThat(optionalPhoneService
+                        .resolve(result.sessionToken())
+                        .orElseThrow()
+                        .nickname())
+                .isEqualTo("브릭러버");
+    }
+
+    @Test
+    void resolve_returnsNullNickname_whenOnboardingHasNotSetOne() {
+        service.register(registerCommand("no-nickname@b.com", "password1"));
+        service.verify(new VerifyEmailCommand("no-nickname@b.com", "123456"));
+        SignInResult result = service.signIn(new SignInCommand("no-nickname@b.com", "password1"));
+
+        assertThat(service.resolve(result.sessionToken()).orElseThrow().nickname())
+                .isNull();
     }
 
     @Test

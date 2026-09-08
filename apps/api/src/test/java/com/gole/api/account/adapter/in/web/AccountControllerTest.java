@@ -2,10 +2,12 @@ package com.gole.api.account.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.hamcrest.Matchers.nullValue;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -13,6 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.gole.api.account.adapter.in.web.AccountRequests.RegisterRequest;
 import com.gole.api.account.application.port.in.GetCurrentSessionUseCase;
+import com.gole.api.account.application.port.in.GetCurrentSessionUseCase.CurrentSession;
 import com.gole.api.account.application.port.in.LogoutUseCase;
 import com.gole.api.account.application.port.in.PublicAuthRequestLimitUseCase;
 import com.gole.api.account.application.port.in.RefreshSessionUseCase;
@@ -45,6 +48,7 @@ class AccountControllerTest {
     private RegisterAccountUseCase registerAccounts;
     private ResendVerificationUseCase resendVerifications;
     private PublicAuthRequestLimitUseCase publicRequestLimit;
+    private GetCurrentSessionUseCase getCurrentSessionUseCase;
     private MockMvc mvc;
 
     @BeforeEach
@@ -53,12 +57,13 @@ class AccountControllerTest {
         registerAccounts = mock(RegisterAccountUseCase.class);
         resendVerifications = mock(ResendVerificationUseCase.class);
         publicRequestLimit = mock(PublicAuthRequestLimitUseCase.class);
+        getCurrentSessionUseCase = mock(GetCurrentSessionUseCase.class);
         var controller = new AccountController(
                 registerAccounts,
                 resendVerifications,
                 mock(VerifyEmailUseCase.class),
                 mock(SignInUseCase.class),
-                mock(GetCurrentSessionUseCase.class),
+                getCurrentSessionUseCase,
                 mock(LogoutUseCase.class),
                 refreshSessions,
                 new SessionCookie("false", Duration.ofDays(7)),
@@ -66,6 +71,31 @@ class AccountControllerTest {
                 new ClientAddressResolver(),
                 new EmailAuthenticationAvailability("test", false));
         mvc = MockMvcBuilders.standaloneSetup(controller).build();
+    }
+
+    @Test
+    void me_returnsNickname_whenOnboardingHasSetOne() throws Exception {
+        when(getCurrentSessionUseCase.resolve("token-1"))
+                .thenReturn(
+                        Optional.of(new CurrentSession("account-1", "member@gole.test", Role.USER, false, "구글가입자")));
+
+        mvc.perform(get("/api/v1/accounts/me").header(HttpHeaders.AUTHORIZATION, "Bearer token-1"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.accountId").value("account-1"))
+                .andExpect(jsonPath("$.email").value("member@gole.test"))
+                .andExpect(jsonPath("$.nickname").value("구글가입자"));
+    }
+
+    @Test
+    void me_returnsNullNickname_whenOnboardingHasNotSetOne() throws Exception {
+        when(getCurrentSessionUseCase.resolve("token-2"))
+                .thenReturn(Optional.of(new CurrentSession("account-2", "member2@gole.test", Role.USER)));
+
+        // doesNotExist()는 값이 null이어도 통과해 두 경우를 구분하지 못한다. 클라이언트는
+        // 필드가 null로 내려오는 쪽에 맞춰져 있으므로 그것을 그대로 못박는다.
+        mvc.perform(get("/api/v1/accounts/me").header(HttpHeaders.AUTHORIZATION, "Bearer token-2"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.nickname").value(nullValue()));
     }
 
     @Test

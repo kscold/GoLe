@@ -57,6 +57,8 @@ export interface Me {
   readonly role: "USER" | "ADMIN";
   /** 온보딩 R8. */
   readonly onboardingRequired: boolean;
+  /** 온보딩에서 설정한 표시 이름. 아직 설정 전이면 null. */
+  readonly nickname: string | null;
 }
 
 export type AccountDeletionStatus = "BLOCKED" | "READY" | "COMPLETED";

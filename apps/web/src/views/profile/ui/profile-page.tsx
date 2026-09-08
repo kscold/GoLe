@@ -175,6 +175,8 @@ export function ProfilePage() {
 
   const accountId = session.accountId;
   const email = me.status === "ready" ? me.data.email : null;
+  // 빈 값은 전부 null로 눕힌다 — 아래 `??` 폴백이 빈 문자열은 걸러 주지 못한다.
+  const nickname = me.status === "ready" && me.data.nickname ? me.data.nickname : null;
   const showSettlements =
     launch.features.payments || settlements.status !== "ready" || settlements.data.length > 0;
   const settlementDescription = launch.features.partnerPayout
@@ -236,15 +238,16 @@ export function ProfilePage() {
         {/* 아바타 + 기본 */}
         <div className="flex items-center gap-4">
           <div className="grid h-14 w-14 shrink-0 place-items-center rounded-full bg-brand-50 text-xl font-extrabold text-brand-700">
-            {/* 이메일 첫 글자가 사람이 알아보는 유일한 단서다. UUID 첫 글자는 의미가 없다. */}
-            {(email ?? accountId).slice(0, 1).toUpperCase()}
+            {/* 닉네임이 있으면 그 첫 글자가, 없으면 이메일 첫 글자가 사람이 알아보는 단서다.
+                UUID 첫 글자는 의미가 없다. */}
+            {(nickname ?? email ?? accountId).slice(0, 1).toUpperCase()}
           </div>
           <div className="flex min-w-0 flex-col gap-1.5">
             {me.status === "loading" ? (
               <Skeleton className="h-7 w-52 rounded-md" />
             ) : (
               <Heading level={2} className="truncate">
-                {email ?? shortenId(accountId)}
+                {nickname ?? email ?? shortenId(accountId)}
               </Heading>
             )}
             {/* flex-col의 기본 stretch가 배지를 줄 끝까지 늘린다. 배지는 내용만큼만 차지해야 한다. */}
@@ -267,6 +270,33 @@ export function ProfilePage() {
         {tab === "info" && (
           <div className="flex flex-col gap-4">
             <Card padded className="flex flex-col divide-y divide-neutral-100">
+              <InfoRow label="닉네임">
+                {me.status === "loading" ? (
+                  <Skeleton className="h-5 w-48 rounded" />
+                ) : me.status === "failed" ? (
+                  /* 닉네임과 이메일은 같은 /me 한 번으로 채워진다. 두 줄 모두 실패 안내와
+                     재시도 버튼을 띄우면 같은 요청에 대한 경고가 두 번 겹친다. 안내는 바로
+                     아래 이메일 줄이 대표로 맡고 여기는 빈자리 표시만 남긴다. */
+                  <p className="text-neutral-400">—</p>
+                ) : /* null·undefined·빈 문자열을 모두 "아직 없음"으로 본다 — 서버가 필드를
+                      생략해도 빈 줄이 아니라 설정 안내가 나와야 한다. */
+                me.data.nickname ? (
+                  <p className="text-neutral-900">{me.data.nickname}</p>
+                ) : (
+                  <div className="flex flex-wrap items-center gap-2">
+                    <Text tone="secondary" size="sm">
+                      아직 설정하지 않았어요
+                    </Text>
+                    <Link
+                      href="/onboarding"
+                      className="font-semibold text-brand-700 underline-offset-4 hover:underline"
+                    >
+                      닉네임 설정하기
+                    </Link>
+                  </div>
+                )}
+              </InfoRow>
+
               <InfoRow label="이메일">
                 {me.status === "loading" ? (
                   <Skeleton className="h-5 w-48 rounded" />

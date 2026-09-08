@@ -19,3 +19,7 @@ gole:
     # 운영은 카카오 템플릿 승인 전까지 빈 값으로 두어 발송을 명시적으로 거부해야 한다(503).
     # 로컬은 LoggingAlimtalkSenderAdapter가 실제 발송 대신 로그만 남기므로 값이 있어도 안전하다.
     phone-verification-template-id: "${GOLE_ONBOARDING_PHONE_TEMPLATE_ID:local-dev-onboarding-otp}"
+    # 로컬에는 코드를 받을 실제 알림톡이 없다. 이 값을 켜지 않으면 OTP가 해시로만 남고 로그도
+    # 가려져 전화 인증을 끝까지 밟아볼 방법이 사라진다. 로컬 프로필에서만 여는 이유이며,
+    # 공개 환경은 이 값이 true여도 PhoneVerificationCodeExposurePolicy가 환경을 보고 닫는다.
+    log-verification-codes: ${GOLE_ONBOARDING_LOG_VERIFICATION_CODES:true}

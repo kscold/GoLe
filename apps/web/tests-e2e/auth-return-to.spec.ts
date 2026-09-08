@@ -143,6 +143,29 @@ test.describe("소셜 로그인 복귀 경로", () => {
     await expect(page).toHaveURL(/\/privacy\?source=social$/);
   });
 
+  // /login이 signupPolicyAcceptance 없이 인가 URL을 요청하므로(mode="signin"), 미가입
+  // 구글 계정은 여기서 걸린다. 같은 /login으로 되돌리면 사용자가 이 화면을 무한히 반복하게
+  // 되므로 /signup으로 갈라야 한다.
+  test("미가입 구글 계정은 정책 동의 오류를 회원가입 화면으로 안내한다", async ({ page }) => {
+    await page.route("**/api/v1/auth/oauth/google/callback", (route) =>
+      route.fulfill({
+        status: 400,
+        json: {
+          code: "POLICY_ACCEPTANCE_REQUIRED",
+          message: "이용약관 확인, 개인정보처리방침 확인, 만 14세 이상 확인이 모두 필요합니다",
+        },
+      }),
+    );
+
+    await page.goto("/auth/callback/google?code=oauth-code&state=oauth-state");
+
+    await expect(page.getByText("아직 가입되어 있지 않아요")).toBeVisible();
+    await expect(page.getByRole("link", { name: "회원가입 화면으로" })).toHaveAttribute(
+      "href",
+      "/signup",
+    );
+  });
+
   test("provider 조회 실패를 준비 중으로 숨기지 않고 다시 확인한다", async ({ page }) => {
     let recovered = false;
     let attempts = 0;

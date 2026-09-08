@@ -13,5 +13,6 @@ public final class AccountResponses {
 
     public record RefreshSessionResponse(String accountId, String sessionToken, String role, boolean rotated) {}
 
-    public record MeResponse(String accountId, String email, String role, boolean onboardingRequired) {}
+    public record MeResponse(
+            String accountId, String email, String role, boolean onboardingRequired, String nickname) {}
 }

@@ -8,9 +8,11 @@ import com.gole.api.account.application.port.in.SelectInterestTagsUseCase;
 import com.gole.api.account.application.port.in.SetNicknameUseCase;
 import com.gole.api.account.application.port.in.SubmitOnboardingConsentUseCase;
 import com.gole.api.account.application.port.out.AccountRepositoryPort;
+import com.gole.api.account.application.port.out.PasswordHasherPort;
 import com.gole.api.account.application.port.out.PhoneVerificationStorePort;
 import com.gole.api.account.application.port.out.PhoneVerificationStorePort.PhoneVerificationChallenge;
 import com.gole.api.account.application.port.out.VerificationCodeGeneratorPort;
+import com.gole.api.account.config.PhoneVerificationCodeExposurePolicy;
 import com.gole.api.account.domain.exception.PhoneVerificationUnavailableException;
 import com.gole.api.account.domain.exception.VerificationException;
 import com.gole.api.account.domain.model.Account;
@@ -18,12 +20,15 @@ import com.gole.api.account.domain.model.InterestTag;
 import com.gole.api.account.domain.model.InterestTagCatalog;
 import com.gole.api.account.domain.model.Nickname;
 import com.gole.api.account.domain.model.OnboardingProfile;
+import com.gole.api.account.domain.model.PasswordHash;
 import com.gole.api.account.domain.model.PhoneNumber;
 import com.gole.api.common.exception.ConflictException;
 import com.gole.api.common.exception.NotFoundException;
 import com.gole.api.notification.application.port.out.AlimtalkSendException;
 import com.gole.api.notification.application.port.out.AlimtalkSenderPort;
 import com.gole.api.notification.application.port.out.AlimtalkSenderPort.SendAlimtalkCommand;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -42,6 +47,9 @@ import org.springframework.stereotype.Service;
  * <p>OTP 발송은 신규 포트를 만들지 않고 notification 컨텍스트의 {@link AlimtalkSenderPort}를
  * 그대로 호출한다(D3). 실제 CoolSMS 빈이나 로컬 전용 로깅 빈이 없는 구성도 부팅할 수 있도록
  * Optional로 주입한다. 공개 환경의 로깅 빈은 요청을 성공처럼 처리하지 않고 실패로 닫힌다.
+ *
+ * <p>OTP 저장 형태는 {@link PhoneVerificationCodeExposurePolicy}가 정한다 — 기본은 단방향 해시고,
+ * 실제 발송이 없는 개발 환경에서 명시적으로 옵트인했을 때만 평문이다.
  */
 @Service
 public class OnboardingService
@@ -63,6 +71,8 @@ public class OnboardingService
     private final PhoneVerificationStorePort phoneVerifications;
     private final VerificationCodeGeneratorPort codeGenerator;
     private final Optional<AlimtalkSenderPort> alimtalkSender;
+    private final PasswordHasherPort passwordHasher;
+    private final PhoneVerificationCodeExposurePolicy codeExposure;
     private final OnboardingProperties properties;
     private final Clock clock;
 
@@ -71,12 +81,16 @@ public class OnboardingService
             PhoneVerificationStorePort phoneVerifications,
             VerificationCodeGeneratorPort codeGenerator,
             Optional<AlimtalkSenderPort> alimtalkSender,
+            PasswordHasherPort passwordHasher,
+            PhoneVerificationCodeExposurePolicy codeExposure,
             OnboardingProperties properties,
             Clock clock) {
         this.accountRepository = accountRepository;
         this.phoneVerifications = phoneVerifications;
         this.codeGenerator = codeGenerator;
         this.alimtalkSender = alimtalkSender;
+        this.passwordHasher = passwordHasher;
+        this.codeExposure = codeExposure;
         this.properties = properties;
         this.clock = clock;
     }
@@ -133,8 +147,13 @@ public class OnboardingService
         String code = codeGenerator.generateCode();
         sendCode(phoneNumber, code);
 
+        // 공개 환경은 항상 해시다. 실제 발송이 없는 개발 환경에서만, 그것도 명시적 옵트인이
+        // 있을 때만 평문으로 남겨 개발자가 Redis나 로그에서 코드를 꺼내 흐름을 밟아볼 수 있게 한다.
+        String storedCode = codeExposure.plaintextAllowed()
+                ? code
+                : passwordHasher.hash(code).value();
         phoneVerifications.issue(
-                account.getId(), new PhoneVerificationChallenge(phoneNumber.value(), code, 0), OTP_TTL);
+                account.getId(), new PhoneVerificationChallenge(phoneNumber.value(), storedCode, 0), OTP_TTL);
         phoneVerifications.startCooldown(account.getId(), RESEND_COOLDOWN);
         return new PhoneVerificationRequested(phoneNumber.masked(), OTP_TTL.toSeconds());
     }
@@ -147,7 +166,7 @@ public class OnboardingService
                 .orElseThrow(() ->
                         new VerificationException("PHONE_VERIFICATION_CODE_MISSING", "인증 코드가 만료되었습니다. 다시 요청해 주세요"));
 
-        if (!challenge.code().equals(command.code())) {
+        if (!codeMatches(command.code(), challenge.storedCode())) {
             PhoneVerificationChallenge retried = challenge.withOneMoreAttempt();
             if (retried.attempts() >= MAX_CONFIRM_ATTEMPTS) {
                 // 5회 오답이면 해당 OTP를 무효화한다(D2) — 남은 TTL 동안 무제한 대입을 막는다.
@@ -187,6 +206,23 @@ public class OnboardingService
         if (accountRepository.existsByVerifiedPhoneNumber(phoneNumber, accountId)) {
             throw new ConflictException("PHONE_ALREADY_IN_USE", "이미 다른 계정에서 인증된 전화번호입니다");
         }
+    }
+
+    /**
+     * 입력 코드가 저장된 형태와 일치하는가.
+     *
+     * <p>저장할 때와 같은 정책을 본다. 발급 직후 정책이 뒤집히면(설정 변경 + 재기동) 남은 TTL
+     * 동안의 코드는 대조에 실패하는데, 이는 사용자가 재요청하면 풀리는 쪽이라 그대로 둔다 —
+     * 반대로 저장 형태를 추측해서 맞춰 주면 평문을 해시로 착각시키는 경로가 생긴다.
+     */
+    private boolean codeMatches(String submitted, String storedCode) {
+        if (!codeExposure.plaintextAllowed()) {
+            return passwordHasher.matches(submitted, new PasswordHash(storedCode));
+        }
+        // 평문 경로에도 상수 시간 비교를 쓴다. 개발 전용이지만 String.equals의 조기 반환을
+        // 그대로 두면 이 분기가 타이밍 실험의 연습장이 된다.
+        return MessageDigest.isEqual(
+                submitted.getBytes(StandardCharsets.UTF_8), storedCode.getBytes(StandardCharsets.UTF_8));
     }
 
     private void sendCode(PhoneNumber phoneNumber, String code) {
