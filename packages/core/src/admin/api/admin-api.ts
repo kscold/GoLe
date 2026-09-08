@@ -783,3 +783,84 @@ export function fetchAdminOrderContacts(
 ): Promise<AdminOrderContacts> {
   return get<AdminOrderContacts>(token, `/api/admin/orders/${orderId}/contacts`);
 }
+
+// ── 홍보 게시 검토 (promotion-review) ─────────────────────────
+
+export type PromotionChannel = "THREADS";
+
+export type PromotionPostStatus = "DRAFT" | "PENDING_REVIEW" | "APPROVED" | "PUBLISHED";
+
+/**
+ * 지금 발행(publish)은 스텁 어댑터가 처리해 실제 Threads에 올라가지 않는다
+ * (promotion-review D5). 자격증명 연동 전까지는 승인·발행해도 외부에 실제로 나가지 않는다.
+ */
+export interface AdminPromotionPost {
+  readonly id: string;
+  readonly channel: PromotionChannel;
+  readonly caption: string;
+  readonly mediaUrls: readonly string[];
+  readonly authorId: string;
+  readonly status: PromotionPostStatus;
+  readonly createdAt: string | null;
+  readonly submittedAt: string | null;
+  readonly reviewerId: string | null;
+  readonly reviewedAt: string | null;
+  readonly rejectionReason: string | null;
+  readonly publishedAt: string | null;
+  readonly externalPostId: string | null;
+}
+
+export interface CreatePromotionPostInput {
+  readonly channel: PromotionChannel;
+  readonly caption: string;
+  readonly mediaUrls: readonly string[];
+}
+
+export function fetchAdminPromotionPosts(
+  token: string,
+  limit = 30,
+  status?: PromotionPostStatus,
+): Promise<readonly AdminPromotionPost[]> {
+  const params = new URLSearchParams({ limit: String(limit) });
+  if (status) params.set("status", status);
+  return get<readonly AdminPromotionPost[]>(token, `/api/admin/promotion-posts?${params}`);
+}
+
+export function createAdminPromotionPost(
+  token: string,
+  input: CreatePromotionPostInput,
+): Promise<{ readonly id: string }> {
+  return post<{ readonly id: string }>(token, "/api/admin/promotion-posts", input);
+}
+
+export function submitAdminPromotionPost(
+  token: string,
+  promotionPostId: string,
+): Promise<AdminPromotionPost> {
+  return post<AdminPromotionPost>(token, `/api/admin/promotion-posts/${promotionPostId}/submit`);
+}
+
+export function approveAdminPromotionPost(
+  token: string,
+  promotionPostId: string,
+): Promise<AdminPromotionPost> {
+  return post<AdminPromotionPost>(token, `/api/admin/promotion-posts/${promotionPostId}/approve`);
+}
+
+export function rejectAdminPromotionPost(
+  token: string,
+  promotionPostId: string,
+  reason: string,
+): Promise<AdminPromotionPost> {
+  return post<AdminPromotionPost>(token, `/api/admin/promotion-posts/${promotionPostId}/reject`, {
+    reason,
+  });
+}
+
+/** 승인된 게시물만 발행 가능. 지금은 스텁이라 실제 Threads에는 올라가지 않는다. */
+export function publishAdminPromotionPost(
+  token: string,
+  promotionPostId: string,
+): Promise<AdminPromotionPost> {
+  return post<AdminPromotionPost>(token, `/api/admin/promotion-posts/${promotionPostId}/publish`);
+}
